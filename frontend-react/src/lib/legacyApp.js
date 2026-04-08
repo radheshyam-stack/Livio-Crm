@@ -3945,8 +3945,11 @@ function getEmailConfig(){
   try{return JSON.parse(localStorage.getItem('livio_email_config')||'{}');}
   catch{return {};}
 }
+const DEFAULT_API_BASE=(typeof import.meta!=='undefined'&&import.meta.env&&import.meta.env.VITE_API_BASE
+  ? String(import.meta.env.VITE_API_BASE)
+  : 'http://127.0.0.1:3001/api').trim();
 function getEmailApiBase(cfg){
-  const raw=(cfg?.apiBase||'http://127.0.0.1:3001/api').trim();
+  const raw=(cfg?.apiBase||DEFAULT_API_BASE).trim();
   return raw.replace(/\/+$/,'');
 }
 function hasSmtpOverride(cfg){
@@ -4053,7 +4056,7 @@ function _renderEmailCfgStatus(){
 
 function saveEmailConfig(){
   const cfg={
-    apiBase:(vEl('cfg-api-base')?.value||'').trim()||'http://127.0.0.1:3001/api',
+    apiBase:(vEl('cfg-api-base')?.value||'').trim()||DEFAULT_API_BASE,
     host:(vEl('cfg-smtp-host')?.value||'').trim(),
     port:(vEl('cfg-smtp-port')?.value||'').trim()||'587',
     user:(vEl('cfg-smtp-user')?.value||'').trim(),
@@ -4073,7 +4076,7 @@ function saveEmailConfig(){
 function clearEmailConfig(){
   if(!confirm('Clear saved SMTP settings? The app will then rely on backend/.env only.'))return;
   localStorage.removeItem('livio_email_config');
-  if(vEl('cfg-api-base')) vEl('cfg-api-base').value='http://127.0.0.1:3001/api';
+  if(vEl('cfg-api-base')) vEl('cfg-api-base').value=DEFAULT_API_BASE;
   if(vEl('cfg-smtp-host')) vEl('cfg-smtp-host').value='';
   if(vEl('cfg-smtp-port')) vEl('cfg-smtp-port').value='587';
   if(vEl('cfg-smtp-user')) vEl('cfg-smtp-user').value='';
