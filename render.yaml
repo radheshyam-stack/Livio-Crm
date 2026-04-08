@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: livio-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DB_FILE
+        value: ./data/db.json
+
+  - type: static
+    name: livio-frontend
+    rootDir: frontend-react
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
