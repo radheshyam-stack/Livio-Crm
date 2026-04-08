@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "npm --prefix frontend-react install && npm --prefix frontend-react run build",
+    "build": "npm --prefix backend install && npm --prefix frontend-react install && npm --prefix frontend-react run build",
     "start": "npm --prefix backend start"
   }
 }
