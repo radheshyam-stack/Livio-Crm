@@ -3948,6 +3948,114 @@ function getEmailConfig(){
 const DEFAULT_API_BASE=(typeof import.meta!=='undefined'&&import.meta.env&&import.meta.env.VITE_API_BASE
   ? String(import.meta.env.VITE_API_BASE)
   : 'http://127.0.0.1:3001/api').trim();
+let syncTimer=null;
+let syncInFlight=false;
+let hydrateStarted=false;
+function normalizeDBShape(input){
+  const raw=(input&&typeof input==='object')?input:{};
+  const hasProjectsField=Array.isArray(raw.projects);
+  const fallbackProjects=hasProjectsField
+    ? raw.projects
+    : [JSON.parse(JSON.stringify(SEED))];
+  const activeId=raw.activeId??raw.activeProjectId??fallbackProjects?.[0]?.id??'proj_madera';
+  const db={
+    ...raw,
+    projects:fallbackProjects,
+    activeId,
+    activeProjectId:activeId
+  };
+  (db.projects||[]).forEach(p=>{
+    if(!p.works)p.works=[];
+    if(!p.milestones)p.milestones=[];
+    if(!p.quotes)p.quotes=[];
+    if(!p.plans)p.plans=[];
+    if(!p.inspections)p.inspections=[];
+    p.milestones.forEach(m=>{
+      if(!m.payFiles)m.payFiles=[];
+      if(!m.progressPayments)m.progressPayments=[];
+      m.progressPayments.forEach(pp=>{if(!pp.files)pp.files=[];});
+    });
+    p.quotes.forEach(q=>{
+      if(!q.files)q.files=[];
+      if(!q.payMilestones){
+        q.payMilestones=q.paymilestones||q.paymentMilestones||[];
+        delete q.paymilestones;
+        delete q.paymentMilestones;
+      }
+      q.payMilestones.forEach(pm=>{
+        if(!pm.files)pm.files=[];
+        if(!pm.lienFiles)pm.lienFiles=[];
+        if(pm.paid===undefined)pm.paid=false;
+        if(!pm.paidDate)pm.paidDate='';
+      });
+    });
+    p.inspections.forEach(i=>{if(!i.files)i.files=[];});
+    if(!p.invoices)p.invoices=[]; if(!p.vendors)p.vendors=[]; if(!p.checklist)p.checklist=[]; if(!p.qaqcLog)p.qaqcLog=[]; if(!p.chkCategories)p.chkCategories=[]; (p.checklist||[]).forEach(it=>{(it.comments||[]).forEach(c=>regFiles(c.files||[]));}); (p.qaqcLog||[]).forEach(it=>regFiles(it.files||[])); (p.checklist||[]).forEach(it=>{if(!it.comments)it.comments=[];}); p.vendors.forEach(v=>regFiles(v.files||[]));
+    p.invoices.forEach(inv=>{if(!inv.files)inv.files=[];});
+  });
+  return db;
+}
+function setDB(nextDB){
+  DB=normalizeDBShape(nextDB);
+  if(typeof window!=='undefined') window.DB=DB;
+}
+function persistDBLocal(){
+  localStorage.setItem(SK,JSON.stringify(DB));
+}
+async function syncRemoteDB(){
+  if(syncInFlight) return;
+  syncInFlight=true;
+  try{
+    await fetch(DEFAULT_API_BASE+'/projects/sync',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(DB)
+    });
+  }catch(e){
+    console.warn('Remote sync failed:',e?.message||e);
+  }finally{
+    syncInFlight=false;
+  }
+}
+function queueRemoteSync(delay=700){
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>{syncRemoteDB();},delay);
+}
+async function hydrateDBFromServer(){
+  if(hydrateStarted) return;
+  hydrateStarted=true;
+  try{
+    const res=await fetch(DEFAULT_API_BASE+'/projects/all');
+    if(!res.ok) throw new Error('Failed to load shared data');
+    const remote=normalizeDBShape(await res.json());
+    if((remote.projects||[]).length){
+      setDB(remote);
+      try{persistDBLocal();}catch(e){}
+      registerAllFiles();
+      if(typeof renderAll==='function') renderAll();
+    }else if((DB.projects||[]).length){
+      queueRemoteSync(50);
+    }
+  }catch(e){
+    console.warn('Shared data load skipped:',e?.message||e);
+  }
+}
+setDB(DB);
+registerAllFiles();
+saveDB=function(){
+  try{
+    DB.activeProjectId=DB.activeId??DB.activeProjectId??null;
+    persistDBLocal();
+  }catch(e){
+    const msg=e.name==='QuotaExceededError'||e.code===22
+      ?'âš  Browser storage full â€” files are too large for local storage. Export your project to save data.'
+      :'âš  Save failed: '+e.message;
+    toast(msg,5000);
+    console.error('saveDB error:',e);
+  }
+  registerAllFiles();
+  queueRemoteSync();
+};
 function getEmailApiBase(cfg){
   const raw=(cfg?.apiBase||DEFAULT_API_BASE).trim();
   return raw.replace(/\/+$/,'');
@@ -6869,4 +6977,6 @@ export function initLegacyApp() {
 
   // Print
   window.print = window.print;
+
+  hydrateDBFromServer();
 }

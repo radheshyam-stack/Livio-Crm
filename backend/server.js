@@ -13,6 +13,7 @@ const fs       = require('fs');
 const app  = express();
 const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'uploads'));
+const STORAGE_DRIVER = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY ? 'supabase' : 'local';
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -58,6 +59,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     server: 'Livio Building Systems API',
     version: '1.0.0',
+    storage: STORAGE_DRIVER,
     time: new Date().toISOString()
   });
 });
@@ -80,6 +82,7 @@ app.listen(PORT, () => {
   console.log('╚════════════════════════════════════════╝');
   console.log(`  URL     : http://localhost:${PORT}`);
   console.log(`  Health  : http://localhost:${PORT}/api/health`);
+  console.log(`  Storage : ${STORAGE_DRIVER}`);
   console.log(`  Data    : ${path.resolve(process.env.DB_FILE || './data/db.json')}`);
   console.log('');
 });

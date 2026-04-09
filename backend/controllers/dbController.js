@@ -1,88 +1,179 @@
-// ── JSON File Database Controller ─────────────────────────────
-// Reads and writes all app data to data/db.json
-// Each project is stored by its ID as a key.
-
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
+const { getSupabaseAdmin, getSupabaseConfig, hasSupabaseConfig } = require('../lib/supabase');
 
 const DB_PATH = path.resolve(process.env.DB_FILE || path.join(__dirname, '../data/db.json'));
+const EMPTY_DB = { projects: [], activeId: null, activeProjectId: null };
 
-// Ensure data directory and file exist
-function ensureDB() {
+function cloneEmptyDB() {
+  return JSON.parse(JSON.stringify(EMPTY_DB));
+}
+
+function normalizeDB(data) {
+  const raw = data && typeof data === 'object' ? data : {};
+  const activeId = raw.activeId ?? raw.activeProjectId ?? null;
+
+  return {
+    ...cloneEmptyDB(),
+    ...raw,
+    projects: Array.isArray(raw.projects) ? raw.projects : [],
+    activeId,
+    activeProjectId: activeId
+  };
+}
+
+function ensureLocalDB() {
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify({ projects: [], activeProjectId: null }, null, 2));
+    fs.writeFileSync(DB_PATH, JSON.stringify(cloneEmptyDB(), null, 2));
   }
 }
 
-function readDB() {
-  ensureDB();
+function readLocalDB() {
+  ensureLocalDB();
   try {
     const raw = fs.readFileSync(DB_PATH, 'utf8');
-    return JSON.parse(raw);
+    return normalizeDB(JSON.parse(raw));
   } catch (e) {
     console.error('DB read error:', e.message);
-    return { projects: [], activeProjectId: null };
+    return cloneEmptyDB();
   }
 }
 
-function writeDB(data) {
-  ensureDB();
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+function writeLocalDB(data) {
+  ensureLocalDB();
+  fs.writeFileSync(DB_PATH, JSON.stringify(normalizeDB(data), null, 2));
 }
 
-// ── Exports ───────────────────────────────────────────────────
+async function ensureSupabaseRow() {
+  const supabase = getSupabaseAdmin();
+  const { rowId, table } = getSupabaseConfig();
 
-/** Return entire DB */
-function getAll() {
-  return readDB();
+  const { data, error } = await supabase
+    .from(table)
+    .select('id')
+    .eq('id', rowId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!data) {
+    const { error: insertError } = await supabase
+      .from(table)
+      .insert({ id: rowId, data: cloneEmptyDB() });
+    if (insertError) throw insertError;
+  }
 }
 
-/** Return all projects */
-function getProjects() {
-  return readDB().projects || [];
+async function readSupabaseDB() {
+  const supabase = getSupabaseAdmin();
+  const { rowId, table } = getSupabaseConfig();
+
+  await ensureSupabaseRow();
+
+  const { data, error } = await supabase
+    .from(table)
+    .select('data')
+    .eq('id', rowId)
+    .single();
+
+  if (error) throw error;
+  return normalizeDB(data?.data);
 }
 
-/** Return one project by ID */
-function getProject(id) {
-  const db = readDB();
-  return (db.projects || []).find(p => p.id === id) || null;
+async function writeSupabaseDB(data) {
+  const supabase = getSupabaseAdmin();
+  const { rowId, table } = getSupabaseConfig();
+  const normalized = normalizeDB(data);
+
+  const { error } = await supabase
+    .from(table)
+    .upsert({ id: rowId, data: normalized }, { onConflict: 'id' });
+
+  if (error) throw error;
+  return normalized;
 }
 
-/** Save/replace all projects (bulk sync from frontend) */
-function saveAll(data) {
-  writeDB(data);
+async function readDB() {
+  if (hasSupabaseConfig()) {
+    try {
+      return await readSupabaseDB();
+    } catch (e) {
+      console.error('Supabase DB read error:', e.message);
+      console.error('Falling back to local JSON data.');
+    }
+  }
+
+  return readLocalDB();
+}
+
+async function writeDB(data) {
+  if (hasSupabaseConfig()) {
+    try {
+      return await writeSupabaseDB(data);
+    } catch (e) {
+      console.error('Supabase DB write error:', e.message);
+      console.error('Falling back to local JSON file for this write.');
+    }
+  }
+
+  writeLocalDB(data);
+  return normalizeDB(data);
+}
+
+async function getAll() {
+  return await readDB();
+}
+
+async function getProjects() {
+  return (await readDB()).projects || [];
+}
+
+async function getProject(id) {
+  const db = await readDB();
+  return (db.projects || []).find((project) => project.id === id) || null;
+}
+
+async function saveAll(data) {
+  await writeDB(data);
   return true;
 }
 
-/** Upsert a single project */
-function saveProject(project) {
-  const db  = readDB();
+async function saveProject(project) {
+  const db = await readDB();
+  const nextProject = project && typeof project === 'object' ? project : {};
+
   if (!db.projects) db.projects = [];
-  const idx = db.projects.findIndex(p => p.id === project.id);
+  const idx = db.projects.findIndex((item) => item.id === nextProject.id);
+
   if (idx > -1) {
-    db.projects[idx] = project;
+    db.projects[idx] = nextProject;
   } else {
-    db.projects.push(project);
+    db.projects.push(nextProject);
   }
-  writeDB(db);
-  return project;
+
+  await writeDB(db);
+  return nextProject;
 }
 
-/** Delete a project */
-function deleteProject(id) {
-  const db = readDB();
-  db.projects = (db.projects || []).filter(p => p.id !== id);
-  writeDB(db);
+async function deleteProject(id) {
+  const db = await readDB();
+  db.projects = (db.projects || []).filter((project) => project.id !== id);
+  if (db.activeId === id || db.activeProjectId === id) {
+    const fallbackId = db.projects[0]?.id || null;
+    db.activeId = fallbackId;
+    db.activeProjectId = fallbackId;
+  }
+  await writeDB(db);
   return true;
 }
 
-/** Set active project ID */
-function setActiveProject(id) {
-  const db = readDB();
+async function setActiveProject(id) {
+  const db = await readDB();
+  db.activeId = id;
   db.activeProjectId = id;
-  writeDB(db);
+  await writeDB(db);
   return true;
 }
 

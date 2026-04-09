@@ -1,77 +1,148 @@
-// ── File Upload / Download API Routes ────────────────────────
-// Base: /api/files
-
-const express  = require('express');
-const router   = express.Router();
-const multer   = require('multer');
-const path     = require('path');
-const fs       = require('fs');
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const { getSupabaseAdmin, getSupabaseConfig, hasSupabaseConfig } = require('../lib/supabase');
 
 const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, '../uploads'));
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// ── Multer storage ────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  destination: (req, file, cb) => {
-    // Organise by project ID if provided
-    const projectId = req.body.projectId || req.query.projectId || 'general';
-    const dir = path.join(UPLOAD_DIR, projectId);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext  = path.extname(file.originalname);
-    const name = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_\-]/g, '_');
-    cb(null, `${uuidv4()}_${name}${ext}`);
+function allowFile(req, file, cb) {
+  const allowed = /\.(pdf|doc|docx|xls|xlsx|png|jpg|jpeg|gif|webp|svg|txt|csv|zip|dwg|dxf)$/i;
+  if (allowed.test(path.extname(file.originalname))) {
+    cb(null, true);
+  } else {
+    cb(new Error('File type not allowed: ' + path.extname(file.originalname)));
   }
-});
+}
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
-  fileFilter: (req, file, cb) => {
-    // Allow common document / image / spreadsheet types
-    const ALLOWED = /\.(pdf|doc|docx|xls|xlsx|png|jpg|jpeg|gif|webp|svg|txt|csv|zip|dwg|dxf)$/i;
-    if (ALLOWED.test(path.extname(file.originalname))) {
-      cb(null, true);
-    } else {
-      cb(new Error('File type not allowed: ' + path.extname(file.originalname)));
+const diskUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const projectId = req.body.projectId || req.query.projectId || 'general';
+      const dir = path.join(UPLOAD_DIR, projectId);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      const name = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_\-]/g, '_');
+      cb(null, `${uuidv4()}_${name}${ext}`);
     }
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: allowFile
+});
+
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: allowFile
+});
+
+router.post('/upload', (req, res, next) => {
+  const middleware = hasSupabaseConfig() ? memoryUpload : diskUpload;
+  middleware.array('files', 20)(req, res, next);
+}, async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const projectId = req.body.projectId || req.query.projectId || 'general';
+
+    if (!hasSupabaseConfig()) {
+      const uploaded = req.files.map((file) => ({
+        id: uuidv4(),
+        name: file.originalname,
+        filename: file.filename,
+        path: `/uploads/${projectId}/${file.filename}`,
+        size: file.size,
+        mimetype: file.mimetype,
+        uploadedAt: new Date().toISOString()
+      }));
+      return res.json({ ok: true, files: uploaded });
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { bucket } = getSupabaseConfig();
+    const uploaded = [];
+
+    for (const file of req.files) {
+      const ext = path.extname(file.originalname);
+      const name = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_\-]/g, '_');
+      const filename = `${uuidv4()}_${name}${ext}`;
+      const objectPath = `${projectId}/${filename}`;
+
+      const { error } = await supabase.storage.from(bucket).upload(objectPath, file.buffer, {
+        cacheControl: '3600',
+        contentType: file.mimetype,
+        upsert: false
+      });
+
+      if (error) throw error;
+
+      uploaded.push({
+        id: uuidv4(),
+        name: file.originalname,
+        filename,
+        path: `/uploads/${projectId}/${filename}`,
+        size: file.size,
+        mimetype: file.mimetype,
+        uploadedAt: new Date().toISOString()
+      });
+    }
+
+    res.json({ ok: true, files: uploaded });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Upload failed' });
   }
 });
 
-// ── POST /api/files/upload — upload one or more files ─────────
-router.post('/upload', upload.array('files', 20), (req, res) => {
-  if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: 'No files uploaded' });
+router.get('/:projectId/:filename', async (req, res) => {
+  if (!hasSupabaseConfig()) {
+    const filePath = path.join(UPLOAD_DIR, req.params.projectId, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    return res.download(filePath);
   }
-  const uploaded = req.files.map(f => ({
-    id:       uuidv4(),
-    name:     f.originalname,
-    filename: f.filename,
-    path:     `/uploads/${req.body.projectId || 'general'}/${f.filename}`,
-    size:     f.size,
-    mimetype: f.mimetype,
-    uploadedAt: new Date().toISOString()
-  }));
-  res.json({ ok: true, files: uploaded });
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { bucket } = getSupabaseConfig();
+    const objectPath = `${req.params.projectId}/${req.params.filename}`;
+    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+
+    if (error || !data) return res.status(404).json({ error: 'File not found' });
+
+    res.setHeader('Content-Disposition', `attachment; filename="${req.params.filename}"`);
+    res.setHeader('Content-Type', data.type || 'application/octet-stream');
+    res.send(Buffer.from(await data.arrayBuffer()));
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'File download failed' });
+  }
 });
 
-// ── GET /api/files/:projectId/:filename — download a file ─────
-router.get('/:projectId/:filename', (req, res) => {
-  const filePath = path.join(UPLOAD_DIR, req.params.projectId, req.params.filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-  res.download(filePath);
-});
+router.delete('/:projectId/:filename', async (req, res) => {
+  if (!hasSupabaseConfig()) {
+    const filePath = path.join(UPLOAD_DIR, req.params.projectId, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    fs.unlinkSync(filePath);
+    return res.json({ ok: true, message: 'File deleted' });
+  }
 
-// ── DELETE /api/files/:projectId/:filename ─────────────────────
-router.delete('/:projectId/:filename', (req, res) => {
-  const filePath = path.join(UPLOAD_DIR, req.params.projectId, req.params.filename);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
-  fs.unlinkSync(filePath);
-  res.json({ ok: true, message: 'File deleted' });
+  try {
+    const supabase = getSupabaseAdmin();
+    const { bucket } = getSupabaseConfig();
+    const objectPath = `${req.params.projectId}/${req.params.filename}`;
+    const { error } = await supabase.storage.from(bucket).remove([objectPath]);
+
+    if (error) return res.status(404).json({ error: 'File not found' });
+    res.json({ ok: true, message: 'File deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'File delete failed' });
+  }
 });
 
 module.exports = router;
