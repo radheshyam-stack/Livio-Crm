@@ -1550,7 +1550,7 @@ function openModal(type, id=null){
       <div class="fr"><label class="fl">Document Type</label><select class="fs" id="f-plan-type">${['Architectural Plans','Structural Plans','Electrical Plans','Plumbing Plans','Mechanical Plans','Site Plan','Permit','Geotechnical Report','Soils Report','Title 24 Compliance','CALGreen Checklist','Inspection Report','Contract','Other'].map(t=>`<option>${t}</option>`).join('')}</select></div>
       ${dropZoneHTML('plan-files','Drop plans, drawings, PDFs, DWG, or any document here…')}
       <div style="font-size:10px;color:var(--muted);margin-top:6px;padding:0 2px">
-        Max file size: 300MB per file &nbsp;·&nbsp; Files upload to your backend and sync with the project across browsers
+        Max file size: 500MB per file &nbsp;·&nbsp; Files upload to your backend and sync with the project across browsers
       </div>`;
 
   } else if(type==='inspection'){
@@ -2190,7 +2190,7 @@ function aItemHTML(f){
 
 function handleFileInput(input, listId){
   Array.from(input.files).forEach(file=>{
-    if(file.size>300*1024*1024){toast('⚠ Max 300MB: '+file.name);return;}
+    if(file.size>500*1024*1024){toast('⚠ Max 500MB: '+file.name);return;}
     const reader=new FileReader();
     reader.onload=e=>{
       const f={id:uid(),name:file.name,size:file.size,data:e.target.result,at:new Date().toISOString()};
@@ -4154,8 +4154,8 @@ handleFileInput = async function(input, listId){
   const files=Array.from(input?.files||[]);
   if(!files.length) return;
   const valid=files.filter(file=>{
-    if(file.size>300*1024*1024){
-      toast('âš  Max 300MB: '+file.name);
+    if(file.size>500*1024*1024){
+      toast('âš  Max 500MB: '+file.name);
       return false;
     }
     return true;
@@ -7200,6 +7200,9 @@ export function initLegacyApp() {
   window.clearEmailConfig = clearEmailConfig;
 
   // File helpers
+  window.handleFileInput = handleFileInput;
+  window.handleDrop = handleDrop;
+  window.removePending = removePending;
   window.dropZoneHTML = dropZoneHTML;
   window.attachListHTML = attachListHTML;
   window.regFiles = regFiles;

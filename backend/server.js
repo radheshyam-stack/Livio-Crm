@@ -11,6 +11,7 @@ const fs       = require('fs');
 const { getDbPath, getPersistentRoot, getUploadDir } = require('./lib/storagePaths');
 
 const app  = express();
+const HOST = process.env.HOST || '0.0.0.0';
 const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = getUploadDir();
 const DB_PATH = getDbPath();
@@ -78,12 +79,12 @@ app.use((err, req, res, next) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
   console.log('\n╔════════════════════════════════════════╗');
   console.log('║  Livio Building Systems — API Server   ║');
   console.log('╚════════════════════════════════════════╝');
-  console.log(`  URL     : http://localhost:${PORT}`);
-  console.log(`  Health  : http://localhost:${PORT}/api/health`);
+  console.log(`  URL     : http://${HOST}:${PORT}`);
+  console.log(`  Health  : http://${HOST}:${PORT}/api/health`);
   console.log(`  Storage : ${STORAGE_DRIVER}`);
   console.log(`  Data    : ${DB_PATH}`);
   console.log(`  Uploads : ${UPLOAD_DIR}`);

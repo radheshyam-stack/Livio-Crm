@@ -8,7 +8,7 @@ const { getSupabaseAdmin, getSupabaseConfig, hasSupabaseConfig } = require('../l
 const { getUploadDir } = require('../lib/storagePaths');
 
 const UPLOAD_DIR = getUploadDir();
-const MAX_UPLOAD_MB = Math.max(1, Number(process.env.MAX_UPLOAD_MB || 300));
+const MAX_UPLOAD_MB = Math.max(1, Number(process.env.MAX_UPLOAD_MB || 500));
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
