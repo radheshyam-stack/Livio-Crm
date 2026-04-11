@@ -4318,35 +4318,25 @@ function getEmailStatusMarkup(cfg){
       </div>
     </div>`;
   }
-  return `<div style="display:flex;align-items:center;gap:10px;background:var(--amber-l);border:1px solid #F5CFA0;border-radius:8px;padding:11px 16px">
+  return `<div style="display:flex;align-items:center;gap:10px;background:var(--green-l);border:1px solid #B8DCA0;border-radius:8px;padding:11px 16px">
     <span style="font-size:20px">⚠️</span>
     <div>
-      <div style="font-size:13px;font-weight:700;color:var(--amber)">SMTP override not saved yet</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">You can still send if the backend has SMTP configured in <strong>backend/.env</strong>. Otherwise enter SMTP details below.</div>
+      <div style="font-size:13px;font-weight:700;color:var(--green)">Email is managed by the backend</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">This app sends mail using the backend SMTP configuration only.</div>
       <div style="font-size:10px;color:var(--muted);margin-top:3px">API: <strong>${apiBase}</strong></div>
     </div>
   </div>`;
 }
 async function sendAppEmail(payload){
-  const cfg=getEmailConfig();
-  const apiBase=getEmailApiBase(cfg);
+  const apiBase=getEmailApiBase();
   const body={
     to:payload.to,
     cc:payload.cc||'',
     subject:payload.subject,
     message:payload.message,
-    fromName:payload.fromName||getEmailFromName(cfg),
-    replyTo:payload.replyTo||getEmailReplyTo(cfg)
+    fromName:payload.fromName||getEmailFromName()
   };
-  if(hasSmtpOverride(cfg)){
-    body.smtpOverride={
-      host:cfg.host,
-      port:Number(cfg.port||587),
-      secure:!!cfg.secure,
-      user:cfg.user,
-      pass:cfg.pass
-    };
-  }
+  if(payload.replyTo) body.replyTo=payload.replyTo;
   const res=await fetch(apiBase+'/email/send',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -4359,21 +4349,11 @@ async function sendAppEmail(payload){
   return data;
 }
 async function verifyEmailConfigRequest(cfg){
-  const apiBase=getEmailApiBase(cfg);
-  const body={};
-  if(hasSmtpOverride(cfg)){
-    body.smtpOverride={
-      host:cfg.host,
-      port:Number(cfg.port||587),
-      secure:!!cfg.secure,
-      user:cfg.user,
-      pass:cfg.pass
-    };
-  }
+  const apiBase=getEmailApiBase();
   const res=await fetch(apiBase+'/email/verify',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)
+    body:JSON.stringify({})
   });
   const data=await res.json().catch(()=>({}));
   if(!res.ok||data.ok===false){

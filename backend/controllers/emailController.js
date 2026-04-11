@@ -4,18 +4,47 @@
 
 const nodemailer = require('nodemailer');
 
+function normalizeSmtpConfig(cfg = {}) {
+  const host = String(cfg.host || process.env.SMTP_HOST || 'smtp.gmail.com').trim();
+  const port = Number(cfg.port || process.env.SMTP_PORT || 587);
+  const secure = cfg.secure !== undefined ? cfg.secure : (process.env.SMTP_SECURE === 'true');
+  const user = String(cfg.user || process.env.SMTP_USER || '').trim();
+  let pass = String(cfg.pass || process.env.SMTP_PASS || '').trim();
+
+  if (/gmail\.com$/i.test(host)) {
+    pass = pass.replace(/\s+/g, '');
+  }
+
+  return { host, port, secure, user, pass };
+}
+
+function friendlyEmailError(err) {
+  const msg = String(err?.message || '').trim();
+  const code = String(err?.code || '').trim();
+
+  if (code === 'EAUTH') return 'SMTP authentication failed. Check SMTP_USER and SMTP_PASS. For Gmail, use an App Password.';
+  if (code === 'ETIMEDOUT' || /timed out/i.test(msg)) return 'SMTP connection timed out. Check SMTP host, port, and provider access.';
+  if (code === 'ESOCKET' || /certificate|ssl|tls/i.test(msg)) return 'SMTP TLS/SSL connection failed. Check SMTP_SECURE and provider settings.';
+  if (/invalid login|username and password not accepted/i.test(msg)) return 'SMTP login was rejected. For Gmail or Google Workspace, use an App Password.';
+
+  return msg || 'Failed to send email';
+}
+
 /** Build transporter from .env or request-supplied config */
 function buildTransporter(cfg) {
-  // cfg can override .env defaults (for per-request SMTP settings)
+  const smtp = normalizeSmtpConfig(cfg);
   return nodemailer.createTransport({
-    host:   cfg.host   || process.env.SMTP_HOST   || 'smtp.gmail.com',
-    port:   Number(cfg.port || process.env.SMTP_PORT || 587),
-    secure: cfg.secure !== undefined ? cfg.secure : (process.env.SMTP_SECURE === 'true'),
+    host:   smtp.host,
+    port:   smtp.port,
+    secure: smtp.secure,
     auth: {
-      user: cfg.user || process.env.SMTP_USER,
-      pass: cfg.pass || process.env.SMTP_PASS
+      user: smtp.user,
+      pass: smtp.pass
     },
-    tls: { rejectUnauthorized: false }
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000
   });
 }
 
@@ -31,10 +60,11 @@ async function sendEmail(req, res) {
     if (!subject) return res.status(400).json({ error: 'Subject is required' });
     if (!message) return res.status(400).json({ error: 'Message body is required' });
 
-    const smtpUser = (smtpOverride?.user) || process.env.SMTP_USER;
+    const smtp = normalizeSmtpConfig(smtpOverride || {});
+    const smtpUser = smtp.user;
     if (!smtpUser) return res.status(500).json({ error: 'SMTP not configured — set SMTP_USER and SMTP_PASS in backend/.env' });
 
-    const transporter = buildTransporter(smtpOverride || {});
+    const transporter = buildTransporter(smtp);
 
     const fromAddress = `${fromName || process.env.EMAIL_FROM_NAME || 'Livio Building Systems'} <${process.env.EMAIL_FROM_ADDRESS || smtpUser}>`;
 
@@ -61,7 +91,7 @@ async function sendEmail(req, res) {
   } catch (err) {
     console.error('Email send error:', err);
     return res.status(500).json({
-      error:   err.message || 'Failed to send email',
+      error:   friendlyEmailError(err),
       details: err.response || null
     });
   }
@@ -74,11 +104,15 @@ async function sendEmail(req, res) {
 async function verifySmtp(req, res) {
   try {
     const { smtpOverride } = req.body || {};
-    const transporter = buildTransporter(smtpOverride || {});
+    const smtp = normalizeSmtpConfig(smtpOverride || {});
+    if (!smtp.user || !smtp.pass) {
+      return res.status(400).json({ ok: false, error: 'SMTP_USER and SMTP_PASS are required on the backend.' });
+    }
+    const transporter = buildTransporter(smtp);
     await transporter.verify();
     return res.json({ ok: true, message: 'SMTP connection verified successfully' });
   } catch (err) {
-    return res.status(400).json({ ok: false, error: err.message });
+    return res.status(400).json({ ok: false, error: friendlyEmailError(err) });
   }
 }
 
