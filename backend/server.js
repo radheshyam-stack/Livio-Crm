@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
+const path = require('path');
 const { getDbPath, getPersistentRoot, getUploadDir } = require('./lib/storagePaths');
 
 const app = express();
@@ -12,6 +13,7 @@ const UPLOAD_DIR = getUploadDir();
 const DB_PATH = getDbPath();
 const PERSISTENT_ROOT = getPersistentRoot();
 const STORAGE_DRIVER = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY ? 'supabase' : 'local';
+const FRONTEND_DIST = path.resolve(__dirname, '../frontend-react/dist');
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -66,14 +68,6 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/email', require('./routes/email'));
 app.use('/api/files', require('./routes/files'));
 
-app.get('/', (req, res) => {
-  res.json({
-    status: 'ok',
-    server: 'Livio Building Systems API',
-    health: '/api/health'
-  });
-});
-
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -83,6 +77,17 @@ app.get('/api/health', (req, res) => {
     time: new Date().toISOString()
   });
 });
+
+if (fs.existsSync(FRONTEND_DIST)) {
+  app.use(express.static(FRONTEND_DIST));
+
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    return res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+  });
+}
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found: ' + req.path });
