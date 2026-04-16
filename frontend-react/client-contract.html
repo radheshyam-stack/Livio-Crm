@@ -263,6 +263,11 @@ function saveContracts(){
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const fmtD=s=>s?new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'â€”';
 const fmtM=n=>n!=null&&n!==''&&n!==0?'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'â€”';
+const LIVIO_COMPANY_NAME='Livio Building Systems';
+const LIVIO_OFFICE_ADDRESS='121 Main St #563, Los Altos, California (CA) 94022';
+const LIVIO_REPLY_EMAIL='ap@golivio.com';
+function getProjectAddress(p){return p?.address||p?.clientAddr||'â€”';}
+function getLivioSignature(){return `${LIVIO_COMPANY_NAME}\n${LIVIO_OFFICE_ADDRESS}\nReply Email: ${LIVIO_REPLY_EMAIL}`;}
 function loadActiveProject(){const db=getLivioProjects();curProjectId=db.activeId||(db.projects&&db.projects[0]?.id)||null;}
 
 /* â”€â”€ TOAST â”€â”€ */
@@ -287,7 +292,7 @@ function getEmailApiBase(){
   return fallback.replace(/\/+$/,'');
 }
 async function sendEmailThroughBackend(to,subject,message){
-  const payload={to,subject,message,fromName:'Livio Building Systems'};
+  const payload={to,subject,message,fromName:'Livio Building Systems',replyTo:LIVIO_REPLY_EMAIL};
   const res=await fetch(getEmailApiBase()+'/email/send',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -382,7 +387,7 @@ function downloadContractPDF(id){
   doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(...white);
   doc.text('Livio Building Systems',14,15);
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(138,170,200);
-  doc.text('Construction Management Â· Licensed General Contractor',14,21);
+  doc.text(`Construction Management Â· ${LIVIO_OFFICE_ADDRESS}`,14,21);
   // CONTRACT title
   doc.setFont('helvetica','bold');doc.setFontSize(24);doc.setTextColor(...white);
   doc.text('CONTRACT',W-14,17,{align:'right'});
@@ -428,7 +433,7 @@ function downloadContractPDF(id){
   doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);
   doc.text(ct.project||p.name||'â€”',14,y2);y2+=5;
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(51,51,51);
-  if(p.address)doc.text(p.address,14,y2),y2+=4;
+  doc.text(getProjectAddress(p),14,y2),y2+=4;
   if(p.permit)doc.text('Permit #: '+p.permit,14,y2),y2+=4;
 
   let yr2=y2-13;
@@ -438,6 +443,7 @@ function downloadContractPDF(id){
   doc.text('Livio Building Systems',W/2+10,yr2);yr2+=5;
   doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(51,51,51);
   doc.text('Licensed General Contractor',W/2+10,yr2);yr2+=4;
+  doc.text(LIVIO_OFFICE_ADDRESS,W/2+10,yr2);yr2+=4;
   doc.text('California License #: ___________',W/2+10,yr2);yr2+=4;
   doc.text('Insurance: General Liability',W/2+10,yr2);
 
@@ -516,7 +522,7 @@ function downloadContractPDF(id){
   const fY=288;
   doc.setDrawColor(...navy);doc.setLineWidth(0.3);doc.line(14,fY-4,W-14,fY-4);
   doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...muted);
-  doc.text('Livio Building Systems Â· '+(p.name||'')+' Â· Contract '+(ct.num||'')+' Â· Generated '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}),W/2,fY,{align:'center'});
+  doc.text(`${LIVIO_COMPANY_NAME} Â· ${LIVIO_OFFICE_ADDRESS} Â· Contract ${(ct.num||'')} Â· Generated ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}`,W/2,fY,{align:'center'});
 
   doc.save('Contract-'+(ct.num||'export')+'.pdf');
   showToast('â¬‡ Contract PDF downloaded!','success');
@@ -533,7 +539,8 @@ I hope this message finds you well. Please find the details of your Construction
 â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 Client:          ${p.client||'â€”'}
 Project:         ${ct.project||p.name||'â€”'}
-Address:         ${p.address||'â€”'}
+Project Address: ${getProjectAddress(p)}
+Livio Address:   ${LIVIO_OFFICE_ADDRESS}
 Contract Date:   ${fmtD(ct.date)}
 Completion Date: ${fmtD(ct.end)}
 Contract Type:   ${ct.type||'â€”'}
@@ -566,10 +573,13 @@ By replying with the above, you confirm your acceptance of all terms and conditi
 
 If you have any questions or require amendments, please don't hesitate to contact us before signing.
 
+Reply Email:   ${LIVIO_REPLY_EMAIL}
+
 Thank you for choosing Livio Building Systems. We look forward to working with you!
 
 Best regards,
-Livio Building Systems
+${LIVIO_COMPANY_NAME}
+${LIVIO_OFFICE_ADDRESS}
 Licensed General Contractor`;
 }
 
@@ -606,6 +616,8 @@ Please find your contract summary below.
 
 Contract #: ${ct.num||'â€”'}
 Project: ${ct.project||p.name||'â€”'}
+Project Address: ${getProjectAddress(p)}
+Livio Address: ${LIVIO_OFFICE_ADDRESS}
 Contract Value: ${fmtM(ct.amount)}
 Contract Date: ${fmtD(ct.date)}
 Completion Date: ${fmtD(ct.end)}
@@ -614,8 +626,10 @@ Status: ${(ct.status||'draft').toUpperCase()}
 
 ${ct.scope?'Scope of Work:\n'+ct.scope+'\n\n':''}${ct.terms?'Payment Terms:\n'+ct.terms+'\n\n':''}Please review and contact us with any questions.
 
+Reply Email: ${LIVIO_REPLY_EMAIL}
+
 Best regards,
-Livio Building Systems`;
+${getLivioSignature()}`;
 
   document.getElementById('em-to').value=p.clientEmail||'';
   document.getElementById('em-subject').value='Contract '+(ct.num||'')+'  â€“ '+(p.name||'');

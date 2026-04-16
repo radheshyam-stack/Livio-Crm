@@ -51,10 +51,15 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--text);font
 .proj-hd{background:var(--navy);padding:11px 16px;display:flex;align-items:center;justify-content:space-between}
 .proj-hd-title{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#fff;letter-spacing:.3px}
 .proj-hd-sub{font-size:11px;color:#8AAAC8;margin-top:1px}
-.proj-grid{padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
-.dc-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
-.dc-val{font-size:13px;font-weight:600;color:var(--text)}
-.proj-ft{padding:9px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg)}
+.proj-grid{padding:14px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px 20px}
+.dc-item{min-width:0}
+.dc-item-wide{grid-column:1/-1}
+.dc-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.dc-val{font-size:13px;font-weight:600;color:var(--text);line-height:1.45;overflow-wrap:anywhere}
+.proj-ft{padding:10px 16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--bg)}
+.proj-status{font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px}
+.proj-status.ok{color:var(--green)}
+.proj-status.warn{color:var(--amber)}
 
 /* INVOICE CARD */
 .inv-card{background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--sh);margin-bottom:14px;overflow:hidden}
@@ -266,7 +271,7 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--text);font
     </div>
     <div class="modal-ft">
       <button class="btn btn-ghost" onclick="closeModal('invoiceModal')">Cancel</button>
-      <button class="btn btn-navy" onclick="saveInvoice()">Save Invoice ?</button>
+      <button class="btn btn-navy" onclick="saveInvoice()">Save Invoice &rarr;</button>
     </div>
   </div>
 </div>
@@ -392,6 +397,11 @@ function uid(){return Math.random().toString(36).slice(2,10)}
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 const fmtD=s=>s?new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'
 const fmtM=n=>(n!=null&&n!=='')?'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'$0.00'
+const LIVIO_COMPANY_NAME='Livio Building Systems'
+const LIVIO_OFFICE_ADDRESS='121 Main St #563, Los Altos, California (CA) 94022'
+const LIVIO_REPLY_EMAIL='ap@golivio.com'
+function getProjectAddress(p){return p?.address||p?.clientAddr||'—'}
+function getLivioSignature(){return `${LIVIO_COMPANY_NAME}\n${LIVIO_OFFICE_ADDRESS}\nReply Email: ${LIVIO_REPLY_EMAIL}`}
 function invPaid(inv){return(inv.payments||[]).reduce((s,p)=>s+(parseFloat(p.amount)||0),0)}
 function invBalance(inv){return(inv.total||0)-invPaid(inv)}
 function statusBadge(s){const m={paid:'b-paid',pending:'b-pending',overdue:'b-overdue',draft:'b-draft'};return`<span class="badge ${m[s]||'b-draft'}">${s}</span>`}
@@ -432,7 +442,8 @@ async function sendEmailThroughBackend(to,subject,message,attachments){
     to,
     subject,
     message,
-    fromName:'Livio Building Systems'
+    fromName:'Livio Building Systems',
+    replyTo:LIVIO_REPLY_EMAIL
   };
   if(Array.isArray(attachments)&&attachments.length) payload.attachments=attachments;
   const res=await fetch(getEmailApiBase()+'/email/send',{
@@ -512,14 +523,14 @@ function renderMain(){
       <span style="background:rgba(255,255,255,.12);color:#8AAAC8;font-size:10px;padding:3px 10px;border-radius:4px;font-weight:700">${invs.length} INVOICE${invs.length!==1?'S':''}</span>
     </div>
     <div class="proj-grid">
-      <div><div class="dc-lbl">Client / Owner</div><div class="dc-val">${esc(p.client||'—')}</div></div>
-      ${p.clientEmail?`<div><div class="dc-lbl">Email</div><div class="dc-val" style="font-size:12px">${esc(p.clientEmail)}</div></div>`:''}
-      ${p.clientPhone?`<div><div class="dc-lbl">Phone</div><div class="dc-val">${esc(p.clientPhone)}</div></div>`:''}
-      ${p.clientAddr?`<div style="grid-column:span 2"><div class="dc-lbl">Address</div><div class="dc-val" style="font-size:12px">${esc(p.clientAddr)}</div></div>`:''}
+      <div class="dc-item dc-item-wide"><div class="dc-lbl">Client / Owner</div><div class="dc-val">${esc(p.client||'—')}</div></div>
+      ${p.clientEmail?`<div class="dc-item"><div class="dc-lbl">Email</div><div class="dc-val" style="font-size:11px">${esc(p.clientEmail)}</div></div>`:''}
+      ${p.clientPhone?`<div class="dc-item"><div class="dc-lbl">Phone</div><div class="dc-val" style="font-size:12px">${esc(p.clientPhone)}</div></div>`:''}
+      ${p.clientAddr?`<div class="dc-item dc-item-wide"><div class="dc-lbl">Address</div><div class="dc-val" style="font-size:12px">${esc(p.clientAddr)}</div></div>`:''}
     </div>
     <div class="proj-ft">
-      ${!p.client?`<span style="font-size:11px;color:var(--amber);font-weight:600">? No client info — add it in project settings</span>`:`<span style="font-size:11px;color:var(--green);font-weight:600">? ${esc(p.client)}</span>`}
-      <button class="btn btn-ghost btn-sm" onclick="openEditClientInfo()">? Edit Client Info</button>
+      ${!p.client?`<span class="proj-status warn">&#9888; No client info. Add it below.</span>`:`<span class="proj-status ok">&#10003; Client details ready for invoices</span>`}
+      <button class="btn btn-ghost btn-sm" onclick="openEditClientInfo()">&#9998; Edit Client Info</button>
     </div>
   </div>
 
@@ -619,10 +630,10 @@ function renderInvoiceCard(inv,p){
     </div>
 
     <div class="inv-actions">
-      <button class="btn btn-blue btn-sm" onclick="generateInvoicePDF('${inv.id}')">? PDF</button>
+      <button class="btn btn-blue btn-sm" onclick="generateInvoicePDF('${inv.id}')">&#128196; PDF</button>
       <button class="btn btn-green btn-sm" onclick="openSendInvoiceEmail('${inv.id}')">✉ Send Email</button>
       <button class="btn btn-amber btn-sm" onclick="openAddPayment('${inv.id}')">💰 Add Payment</button>
-      <button class="btn btn-ghost btn-sm" onclick="openEditInvoice('${inv.id}')">? Edit</button>
+      <button class="btn btn-ghost btn-sm" onclick="openEditInvoice('${inv.id}')">&#9998; Edit</button>
       <button class="btn btn-red btn-sm" style="margin-left:auto" onclick="deleteInvoice('${inv.id}')">🗑 Delete</button>
     </div>
   </div>`;
@@ -884,7 +895,7 @@ function buildInvoicePDFDoc(invId){
   doc.setFont('helvetica','normal');
   doc.setFontSize(8);
   doc.setTextColor(200,225,255);
-  doc.text('Licensed General Contractor  ·  Building Excellence  ·  info@livio.com',ML,52);
+  doc.text(`Licensed General Contractor  ·  ${LIVIO_OFFICE_ADDRESS}`,ML,52);
 
   // "INVOICE" right-aligned
   doc.setFont('helvetica','bold');
@@ -1083,7 +1094,7 @@ function buildInvoicePDFDoc(invId){
   doc.setFont('helvetica','normal');
   doc.setFontSize(8);
   doc.setTextColor(160,160,160);
-  doc.text('Livio Building Systems · Licensed Contractor · All Rights Reserved',W/2,ftY+35,{align:'center'});
+  doc.text(`${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS}`,W/2,ftY+35,{align:'center'});
 
   return { doc, inv };
 }
@@ -1129,7 +1140,7 @@ function downloadLedgerPDF(){
   doc.setFont('helvetica','normal');
   doc.setFontSize(8);
   doc.setTextColor(200,225,255);
-  doc.text('Payment Ledger Report',ML,48);
+  doc.text(`Payment Ledger Report · ${LIVIO_OFFICE_ADDRESS}`,ML,48);
   doc.setFont('helvetica','bold');
   doc.setFontSize(14);
   doc.setTextColor(255,255,255);
@@ -1146,7 +1157,9 @@ function downloadLedgerPDF(){
   doc.setTextColor(12,27,46);
   doc.text(`Project: ${p.name}`,ML,y);
   y+=14;
-  if(p.client){doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(80,80,80);doc.text(`Client: ${p.client}${p.clientPhone?' · '+p.clientPhone:''}${p.clientEmail?' · '+p.clientEmail:''}`,ML,y);y+=12;}
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(80,80,80);doc.text(`Project Address: ${getProjectAddress(p)}`,ML,y);y+=12;
+  doc.text(`Livio Address: ${LIVIO_OFFICE_ADDRESS}`,ML,y);y+=12;
+  if(p.client){doc.text(`Client: ${p.client}${p.clientPhone?' · '+p.clientPhone:''}${p.clientEmail?' · '+p.clientEmail:''}`,ML,y);y+=12;}
   if(p.clientAddr){doc.setFont('helvetica','normal');doc.setFontSize(9);doc.text(`Address: ${p.clientAddr}`,ML,y);y+=12;}
   y+=8;
 
@@ -1217,7 +1230,7 @@ function downloadLedgerPDF(){
   doc.setFont('helvetica','normal');
   doc.setFontSize(7);
   doc.setTextColor(160,160,160);
-  doc.text('Livio Building Systems · Licensed Contractor · All Rights Reserved',W/2,pageH-12,{align:'center'});
+  doc.text(`${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS}`,W/2,pageH-12,{align:'center'});
 
   doc.save(`Payment-Ledger-${p.name.replace(/\s+/g,'_')}.pdf`);
   showToast('? Ledger PDF downloaded!','success');
@@ -1239,6 +1252,8 @@ function downloadLedgerExcel(){
   const summData=[
     ['LIVIO BUILDING SYSTEMS – Payment Ledger'],
     [`Project: ${p.name}`],
+    [`Project Address: ${getProjectAddress(p)}`],
+    [`Livio Address: ${LIVIO_OFFICE_ADDRESS}`],
     [`Client: ${p.client||'—'}`],
     [p.clientAddr?`Address: ${p.clientAddr}`:''],
     ['Generated:',new Date().toLocaleDateString()],
@@ -1299,7 +1314,9 @@ function openSendLedgerEmail(){
 
   let body=`PAYMENT LEDGER — ${p.name}\n${'-'.repeat(50)}\n`;
   body+=`Client: ${p.client||'—'}\n`;
-  if(p.clientAddr)body+=`Address: ${p.clientAddr}\n`;
+  body+=`Project Address: ${getProjectAddress(p)}\n`;
+  body+=`Livio Address: ${LIVIO_OFFICE_ADDRESS}\n`;
+  if(p.clientAddr)body+=`Client Address: ${p.clientAddr}\n`;
   body+=`\nSUMMARY\n`;
   body+=`Total Invoiced:  ${fmtM(totalInvoiced)}\n`;
   body+=`Total Received:  ${fmtM(totalReceived)}\n`;
@@ -1314,7 +1331,8 @@ function openSendLedgerEmail(){
       body+=`    ? ${fmtD(pay.date)}: ${fmtM(pay.amount)}${pay.note?' ('+pay.note+')':''}\n`;
     });
   });
-  body+=`\n${'-'.repeat(50)}\nThank you for your business!\nLivio Building Systems`;
+  body+=`\nReply Email: ${LIVIO_REPLY_EMAIL}\n`;
+  body+=`\n${'-'.repeat(50)}\nThank you for your business!\n${getLivioSignature()}`;
 
   document.getElementById('em-modal-title').textContent='✉ Send Payment Ledger';
   document.getElementById('em-type').value='ledger';
@@ -1336,6 +1354,8 @@ function openSendInvoiceEmail(invId){
   let body=`Dear ${p?.client||'Client'},\n\nPlease find below your invoice details from Livio Building Systems.\n\n`;
   body+=`INVOICE: ${inv.num}\n${'-'.repeat(40)}\n`;
   body+=`Project:    ${inv.project||p?.name||'—'}\n`;
+  body+=`Project Address: ${getProjectAddress(p)}\n`;
+  body+=`Livio Address:   ${LIVIO_OFFICE_ADDRESS}\n`;
   body+=`Issue Date: ${fmtD(inv.date)}\n`;
   body+=`Due Date:   ${fmtD(inv.due)}\n`;
   body+=`Status:     ${(inv.status||'pending').toUpperCase()}\n\n`;
@@ -1349,7 +1369,8 @@ function openSendInvoiceEmail(invId){
   }
   if(inv.notes)body+=`\nBilling Detail:\n${inv.notes}\n`;
   if(inv.paymentTerms)body+=`\nPayment Terms:\n${inv.paymentTerms}\n`;
-  body+=`\nThank you for your business!\nLivio Building Systems`;
+  body+=`\nReply Email: ${LIVIO_REPLY_EMAIL}\n`;
+  body+=`\nThank you for your business!\n${getLivioSignature()}`;
 
   document.getElementById('em-modal-title').textContent=`✉ Send Invoice ${inv.num}`;
   document.getElementById('em-type').value='invoice';

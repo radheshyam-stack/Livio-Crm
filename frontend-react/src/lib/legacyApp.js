@@ -244,6 +244,34 @@ const fmtMoney = n => '$' + Number(n||0).toLocaleString();
 const fmtDate = d => { if(!d) return '—'; try { return new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); } catch(e){ return d; }};
 const fmtTime = t => { if(!t) return '—'; const [h,m]=t.split(':').map(Number); return `${(h%12)||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`; };
 const uid = () => 'x'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const LIVIO_COMPANY_NAME = 'Livio Building Systems';
+const LIVIO_OFFICE_ADDRESS = '121 Main St #563, Los Altos, California (CA) 94022';
+const LIVIO_REPLY_EMAIL = 'ap@golivio.com';
+const getProjectAddressLine = p => p?.address || p?.clientAddr || '—';
+const getLivioOfficeLine = () => `${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS}`;
+const getLivioEmailSignature = () => `${LIVIO_COMPANY_NAME}\n${LIVIO_OFFICE_ADDRESS}\nReply Email: ${LIVIO_REPLY_EMAIL}`;
+function getVendorEmailAcrossProjects(vendorName){
+  const matchName = String(vendorName||'').trim().toLowerCase();
+  if(!matchName) return '';
+  try{
+    const directory = typeof getVDirList === 'function' ? getVDirList() : [];
+    const dirHit = directory.find(entry => {
+      const company = String(entry?.company||'').trim().toLowerCase();
+      const name = String(entry?.name||'').trim().toLowerCase();
+      return !!entry?.email && (company===matchName || name===matchName);
+    });
+    if(dirHit?.email) return String(dirHit.email).trim();
+  }catch{}
+  const projects = Array.isArray(DB?.projects) ? DB.projects : [];
+  for(const project of projects){
+    for(const vendor of (project?.vendors||[])){
+      if(String(vendor?.vendor||'').trim().toLowerCase()===matchName && vendor?.vendorEmail){
+        return String(vendor.vendorEmail).trim();
+      }
+    }
+  }
+  return '';
+}
 // Returns today's date as YYYY-MM-DD in LOCAL time (avoids UTC offset shifting date by 1 day for IST etc.)
 const localDateStr = (d=new Date()) => {
   const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
@@ -2815,9 +2843,9 @@ function exportPaymentLedgerPDF(qidFilter){
     +'<title>Payment Ledger &mdash; '+p.name+'</title>'
     +'<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;color:#1a1917;padding:22px;font-size:12px}h1{font-size:19px;margin-bottom:3px;color:#0C1B2E}.meta{color:#6b6a64;font-size:10px;margin-bottom:16px;line-height:1.7}@media print{body{padding:14px}@page{margin:12mm}}</style></head><body>'
     +'<h1>'+(qidFilter?quotes[0].vendor+' &mdash; Payment Statement':'Payment Ledger &mdash; All Subcontractors')+'</h1>'
-    +'<div class="meta">'+p.name+' &nbsp;&middot;&nbsp; '+(p.address||'')+'<br>Permit: '+(p.permit||'&mdash;')+' &nbsp;&middot;&nbsp; Livio Building Systems &nbsp;&middot;&nbsp; '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</div>'
+    +'<div class="meta">'+p.name+' &nbsp;&middot;&nbsp; '+getProjectAddressLine(p)+'<br>Livio Address: '+LIVIO_OFFICE_ADDRESS+'<br>Permit: '+(p.permit||'&mdash;')+' &nbsp;&middot;&nbsp; '+LIVIO_COMPANY_NAME+' &nbsp;&middot;&nbsp; '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</div>'
     +subsHTML
-    +'<div style="margin-top:20px;font-size:9px;color:#9b9a96;text-align:center;border-top:1px solid #e0ddd5;padding-top:8px">Livio Building Systems &nbsp;&middot;&nbsp; '+p.name+' &nbsp;&middot;&nbsp; Generated '+new Date().toLocaleDateString()+'</div>'
+    +'<div style="margin-top:20px;font-size:9px;color:#9b9a96;text-align:center;border-top:1px solid #e0ddd5;padding-top:8px">'+LIVIO_COMPANY_NAME+' &nbsp;&middot;&nbsp; '+LIVIO_OFFICE_ADDRESS+' &nbsp;&middot;&nbsp; '+p.name+' &nbsp;&middot;&nbsp; Generated '+new Date().toLocaleDateString()+'</div>'
     +'</body></html>';
 
   const win=window.open('','_blank');
@@ -2856,7 +2884,8 @@ function _doPaymentExcel(p, qidFilter){
     const sumRows=[
       ['PAYMENT LEDGER'],
       ['Project:', p.name],
-      ['Address:', p.address||''],
+      ['Project Address:', getProjectAddressLine(p)],
+      ['Livio Address:', LIVIO_OFFICE_ADDRESS],
       ['Permit:', p.permit||''],
       ['Date:', new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})],
     ];
@@ -3033,8 +3062,9 @@ function exportMilestonePDF(){
     +'</style></head><body>'
     +'<h1>Milestone Payment Report</h1>'
     +'<div class="meta">'
-      +p.name+' &nbsp;&middot;&nbsp; '+(p.address||'')+'<br>'
-      +'Permit: '+(p.permit||'&mdash;')+' &nbsp;&middot;&nbsp; '+(p.type||'')+' &nbsp;&middot;&nbsp; Livio Building Systems &nbsp;&middot;&nbsp; '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})
+      +p.name+' &nbsp;&middot;&nbsp; '+getProjectAddressLine(p)+'<br>'
+      +'Livio Address: '+LIVIO_OFFICE_ADDRESS+'<br>'
+      +'Permit: '+(p.permit||'&mdash;')+' &nbsp;&middot;&nbsp; '+(p.type||'')+' &nbsp;&middot;&nbsp; '+LIVIO_COMPANY_NAME+' &nbsp;&middot;&nbsp; '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})
     +'</div>'
     +'<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:18px">'
       +'<thead><tr style="background:#0C1B2E">'
@@ -3049,7 +3079,7 @@ function exportMilestonePDF(){
       +'</tr></thead>'
       +'<tbody>'+msRows+totalRow+'</tbody>'
     +'</table>'
-    +'<div style="font-size:9px;color:#9b9a96;text-align:center;border-top:1px solid #e0ddd5;padding-top:8px">Livio Building Systems &nbsp;&middot;&nbsp; '+p.name+' &nbsp;&middot;&nbsp; Generated '+new Date().toLocaleDateString()+'</div>'
+    +'<div style="font-size:9px;color:#9b9a96;text-align:center;border-top:1px solid #e0ddd5;padding-top:8px">'+LIVIO_COMPANY_NAME+' &nbsp;&middot;&nbsp; '+LIVIO_OFFICE_ADDRESS+' &nbsp;&middot;&nbsp; '+p.name+' &nbsp;&middot;&nbsp; Generated '+new Date().toLocaleDateString()+'</div>'
     +'</body></html>';
 
   const win=window.open('','_blank');
@@ -3081,8 +3111,9 @@ function _doMilestoneExcel(p){
     // ── Ledger Sheet ──
     const ledgerData=[
       ['MILESTONE PAYMENT LEDGER — '+p.name],
-      ['Project:', p.name, '', 'Address:', p.address||''],
-      ['Permit:', p.permit||'', '', 'Type:', p.type||''],
+      ['Project:', p.name, '', 'Project Address:', getProjectAddressLine(p)],
+      ['Livio Address:', LIVIO_OFFICE_ADDRESS, '', 'Type:', p.type||''],
+      ['Permit:', p.permit||''],
       ['Generated:', new Date().toLocaleDateString()],
       [],
       ['Milestone','CBC Ref.','Target Date','Status','Contract Amount','Progress Payment','Amount','Due Date','Status','Date Received','Balance','Proof Files'],
@@ -3821,12 +3852,12 @@ function exportVCPaymentLedgerPDF(vcIdFilter){
   .tot td{background:#0C1B2E;color:#fff;font-weight:700;padding:9px 8px}
   @media print{body{padding:14px}@page{margin:12mm}}</style></head><body>
   <h1>Vendor Payment Ledger</h1>
-  <div class="meta">${p.name} &nbsp;·&nbsp; ${p.address||''}<br>Permit: ${p.permit||'—'} &nbsp;·&nbsp; Livio Building Systems &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
+  <div class="meta">${p.name} &nbsp;·&nbsp; ${getProjectAddressLine(p)}<br>Livio Address: ${LIVIO_OFFICE_ADDRESS}<br>Permit: ${p.permit||'—'} &nbsp;·&nbsp; ${LIVIO_COMPANY_NAME} &nbsp;·&nbsp; ${new Date().toLocaleDateString()}</div>
   <table><thead><tr><th>Vendor / Invoice</th><th>Trade / CSI</th><th>Contract / Amount</th><th>✓ Paid</th><th>Balance Due</th><th>Status</th></tr></thead>
   <tbody>${subsHTML}
   <tr class="tot"><td colspan="2">TOTAL — ${vcs.length} Vendor${vcs.length>1?'s':''}</td><td>$${grandContract.toLocaleString()}</td><td style="color:#9FE1CB">$${grandPaid.toLocaleString()}</td><td style="color:${grandBal>0?'#F09595':'#9FE1CB'}">$${grandBal.toLocaleString()}</td><td></td></tr>
   </tbody></table>
-  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">Livio Building Systems · ${p.name} · Generated ${new Date().toLocaleDateString()}</div>
+  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS} · ${p.name} · Generated ${new Date().toLocaleDateString()}</div>
   </body></html>`;
 
   const win=window.open('','_blank');
@@ -3859,8 +3890,9 @@ function _doVCLedgerExcel(p,vcIdFilter){
     const wb=XLSX.utils.book_new();
     const data=[
       ['VENDOR PAYMENT LEDGER — '+p.name],
-      ['Project:',p.name,'','Address:',p.address||''],
-      ['Permit:',p.permit||'','','Generated:',new Date().toLocaleDateString()],
+      ['Project:',p.name,'','Project Address:',getProjectAddressLine(p)],
+      ['Livio Address:',LIVIO_OFFICE_ADDRESS,'','Generated:',new Date().toLocaleDateString()],
+      ['Permit:',p.permit||''],
       [],
       ['Vendor','Trade / CSI','Contract Amount','Paid','Balance Due','Status %','Invoice #','Milestone','Inv. Amount','Inv. Paid','Inv. Balance','Inv. Status'],
     ];
@@ -4304,7 +4336,7 @@ function getEmailFromName(){
   return 'Livio Building Systems';
 }
 function getEmailReplyTo(){
-  return '';
+  return LIVIO_REPLY_EMAIL;
 }
 function getEmailStatusMarkup(cfg){
   const apiBase=getEmailApiBase(cfg);
@@ -4336,7 +4368,7 @@ async function sendAppEmail(payload){
     message:payload.message,
     fromName:payload.fromName||getEmailFromName()
   };
-  if(payload.replyTo) body.replyTo=payload.replyTo;
+  body.replyTo=payload.replyTo||getEmailReplyTo();
   if(Array.isArray(payload.attachments)&&payload.attachments.length) body.attachments=payload.attachments;
   const res=await fetch(apiBase+'/email/send',{
     method:'POST',
@@ -4425,7 +4457,7 @@ async function testEmailConfig(){
     await sendAppEmail({
       to:testTo,
       subject:'Test Email — Livio Building Systems',
-      message:'This is a test email from Livio Building Systems.\n\nIf you received this, your SMTP email integration is working correctly.\n\n— Livio Building Systems'
+message:'This is a test email from Livio Building Systems.\n\nReply Email: '+LIVIO_REPLY_EMAIL+'\n\nIf you received this, your SMTP email integration is working correctly.\n\n— Livio Building Systems'
     });
     toast('✅ Test email sent to '+testTo);
   }catch(e){
@@ -4763,7 +4795,8 @@ function _buildLedgerText(type, ref, p){
     const pct=vTotal?Math.min(100,Math.round(vPaid/vTotal*100)):0;
     hdr('VENDOR PAYMENT LEDGER');
     lines.push('Project   : '+p.name);
-    lines.push('Address   : '+(p.address||'—'));
+    lines.push('Project Address : '+getProjectAddressLine(p));
+    lines.push('Livio Address   : '+LIVIO_OFFICE_ADDRESS);
     lines.push('Permit    : '+(p.permit||'—'));
     lines.push('Generated : '+now);
     lines.push('');
@@ -4798,7 +4831,8 @@ function _buildLedgerText(type, ref, p){
     const pct=qTotal?Math.min(100,Math.round(qPaid/qTotal*100)):0;
     hdr('APPROVED QUOTE LEDGER');
     lines.push('Project   : '+p.name);
-    lines.push('Address   : '+(p.address||'—'));
+    lines.push('Project Address : '+getProjectAddressLine(p));
+    lines.push('Livio Address   : '+LIVIO_OFFICE_ADDRESS);
     lines.push('Permit    : '+(p.permit||'—'));
     lines.push('Generated : '+now);
     lines.push('');
@@ -4831,7 +4865,8 @@ function _buildLedgerText(type, ref, p){
     const tBal=tContract-tPaid;const pct=tContract?Math.min(100,Math.round(tPaid/tContract*100)):0;
     hdr('VENDOR PAYMENT LEDGER — '+vendorName.toUpperCase());
     lines.push('Project   : '+p.name);
-    lines.push('Address   : '+(p.address||'—'));
+    lines.push('Project Address : '+getProjectAddressLine(p));
+    lines.push('Livio Address   : '+LIVIO_OFFICE_ADDRESS);
     lines.push('Permit    : '+(p.permit||'—'));
     lines.push('Generated : '+now);
     lines.push('');
@@ -4871,7 +4906,8 @@ function _buildLedgerText(type, ref, p){
     const pct=tContract?Math.min(100,Math.round(tPaid/tContract*100)):0;
     hdr('TRADE PAYMENT LEDGER — '+trade.toUpperCase());
     lines.push('Project   : '+p.name);
-    lines.push('Address   : '+(p.address||'—'));
+    lines.push('Project Address : '+getProjectAddressLine(p));
+    lines.push('Livio Address   : '+LIVIO_OFFICE_ADDRESS);
     lines.push('Permit    : '+(p.permit||'—'));
     lines.push('Generated : '+now);
     lines.push('');
@@ -4899,7 +4935,7 @@ function _buildLedgerText(type, ref, p){
     });
   }
   lines.push('');
-  lines.push('— Livio Building Systems · '+now+' —');
+  lines.push('— '+LIVIO_COMPANY_NAME+' · '+LIVIO_OFFICE_ADDRESS+' · '+now+' —');
   return lines.join('\n');
 }
 
@@ -4972,6 +5008,52 @@ function sendLedgerEmail(){
 }
 
 // ── Trade Ledger PDF ──────────────────────────────────────────────
+openLedgerEmail = function(type, ref){
+  const p=proj(); if(!p) return;
+  let toEmail='',toName='',subject='';
+
+  if(type==='vendor'){
+    const v=(p.vendors||[]).find(x=>x.id===ref);
+    if(!v){toast('⚠ Vendor not found');return;}
+    toEmail=(v.vendorEmail||getVendorEmailAcrossProjects(v.vendor)||'').trim();
+    toName=v.vendor;
+    subject='Payment Ledger — '+v.vendor+' — '+p.name;
+    vEl('ledger-email-title').textContent='📧 Email Ledger — '+v.vendor;
+  } else if(type==='vendorname'){
+    toEmail=getVendorEmailAcrossProjects(ref);
+    toName=ref;
+    subject='Payment Ledger — '+ref+' — '+p.name;
+    vEl('ledger-email-title').textContent='📧 Email Ledger — '+ref;
+  } else if(type==='quote'){
+    const q=(p.quotes||[]).find(x=>x.id===ref);
+    if(!q){toast('⚠ Quote not found');return;}
+    toEmail=getVendorEmailAcrossProjects(q.vendor);
+    toName=q.vendor||'Vendor';
+    subject='Approved Quote Ledger — '+toName+' — '+p.name;
+    vEl('ledger-email-title').textContent='📧 Email Approved Quote Ledger — '+toName;
+  } else {
+    toName=ref+' Trade';
+    subject='Trade Payment Ledger — '+ref+' — '+p.name;
+    vEl('ledger-email-title').textContent='📧 Email Trade Ledger — '+ref;
+  }
+
+  let body=_buildLedgerText(type,ref,p);
+  body=body.replace(/Address\s*:\s*[^\n]*/i,`Project Address : ${getProjectAddressLine(p)}\nLivio Address   : ${LIVIO_OFFICE_ADDRESS}`);
+  const greeting='Dear '+toName+',\n\nPlease find below the current payment ledger for your reference.\n\n';
+  const closing='\n\nReply Email: '+LIVIO_REPLY_EMAIL+'\n\nPlease review and contact us if you have any questions.\n\nBest regards,\n'+getLivioEmailSignature();
+
+  vEl('ledger-email-type').value=type;
+  vEl('ledger-email-ref').value=ref;
+  vEl('ledger-email-to').value=toEmail;
+  vEl('ledger-email-cc').value='';
+  vEl('ledger-email-subject').value=subject;
+  vEl('ledger-email-body').value=greeting+body+closing;
+
+  const st=vEl('ledger-email-status');
+  if(st) st.innerHTML=getEmailStatusMarkup(getEmailConfig());
+  vEl('mo-ledger-email').classList.add('open');
+}
+
 function exportTradeLedgerPDF(trade){
   const p=proj();if(!p)return;
   const vcs=(p.vendors||[]).filter(v=>(v.trade||v.csi||'General')===trade&&(p.invoices||[]).some(i=>i.vcId===v.id&&i.approvalStatus==='approved'));
@@ -5006,7 +5088,7 @@ function exportTradeLedgerPDF(trade){
   .tot td{background:#0C1B2E;color:#fff;font-weight:700;padding:9px 8px}
   @media print{body{padding:14px}@page{margin:12mm}}</style></head><body>
   <h1>Trade Payment Ledger</h1><h2>Trade: ${trade}</h2>
-  <div class="meta">${p.name} · ${p.address||''}<br>Permit: ${p.permit||'—'} · Livio Building Systems · ${new Date().toLocaleDateString()}</div>
+  <div class="meta">${p.name} · ${getProjectAddressLine(p)}<br>Livio Address: ${LIVIO_OFFICE_ADDRESS}<br>Permit: ${p.permit||'—'} · ${LIVIO_COMPANY_NAME} · ${new Date().toLocaleDateString()}</div>
   <div style="display:flex;gap:20px;margin-bottom:14px;flex-wrap:wrap">
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Contract</div><div style="font-size:18px;font-weight:700">$${tContract.toLocaleString()}</div></div>
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Paid</div><div style="font-size:18px;font-weight:700;color:#2D6A0F">$${tPaid.toLocaleString()}</div></div>
@@ -5015,7 +5097,7 @@ function exportTradeLedgerPDF(trade){
   </div>
   <table><thead><tr><th>Vendor / Invoice</th><th>Trade</th><th>Contract</th><th>✓ Paid</th><th>Balance</th><th>%</th></tr></thead>
   <tbody>${subsHTML}<tr class="tot"><td colspan="2">TOTAL — ${vcs.length} vendor(s)</td><td>$${tContract.toLocaleString()}</td><td>$${tPaid.toLocaleString()}</td><td>$${tBal.toLocaleString()}</td><td>${tPct}%</td></tr></tbody></table>
-  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">Livio Building Systems · ${p.name} · ${new Date().toLocaleDateString()}</div>
+  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS} · ${p.name} · ${new Date().toLocaleDateString()}</div>
   </body></html>`;
 
   const win=window.open('','_blank');if(!win){toast('⚠ Pop-up blocked');return;}
@@ -5047,8 +5129,9 @@ function _doTradeLedgerExcel(p,trade){
     let tContract=0,tPaid=0;
     const data=[
       ['TRADE PAYMENT LEDGER — '+trade.toUpperCase()],
-      ['Project:',p.name,'','Address:',p.address||''],
-      ['Permit:',p.permit||'','','Generated:',new Date().toLocaleDateString()],
+      ['Project:',p.name,'','Project Address:',getProjectAddressLine(p)],
+      ['Livio Address:',LIVIO_OFFICE_ADDRESS,'','Generated:',new Date().toLocaleDateString()],
+      ['Permit:',p.permit||''],
       ['Trade:',trade],
       [],
       ['Vendor','Trade','Contract Amount','Paid','Balance Due','Progress %','Invoice #','Milestone','Inv. Amount','Inv. Paid','Inv. Balance','Status'],
@@ -5128,7 +5211,7 @@ function exportVendorNameLedgerPDF(vendorName){
   .tot td{background:#0C1B2E;color:#fff;font-weight:700;padding:9px 8px}
   @media print{body{padding:14px}@page{margin:12mm}}</style></head><body>
   <h1>Vendor Payment Ledger</h1><h2>Vendor: ${vendorName} · ${vcs.length} Contract(s)</h2>
-  <div class="meta">${p.name} · ${p.address||''}<br>Permit: ${p.permit||'—'} · Livio Building Systems · ${new Date().toLocaleDateString()}</div>
+  <div class="meta">${p.name} · ${getProjectAddressLine(p)}<br>Livio Address: ${LIVIO_OFFICE_ADDRESS}<br>Permit: ${p.permit||'—'} · ${LIVIO_COMPANY_NAME} · ${new Date().toLocaleDateString()}</div>
   <div style="display:flex;gap:20px;margin-bottom:14px;flex-wrap:wrap">
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Contract</div><div style="font-size:18px;font-weight:700">$${tContract.toLocaleString()}</div></div>
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Paid</div><div style="font-size:18px;font-weight:700;color:#2D6A0F">$${tPaid.toLocaleString()}</div></div>
@@ -5137,7 +5220,7 @@ function exportVendorNameLedgerPDF(vendorName){
   </div>
   <table><thead><tr><th>Vendor / Invoice</th><th>Trade</th><th>Contract</th><th>✓ Paid</th><th>Balance</th><th>%</th></tr></thead>
   <tbody>${subsHTML}${manualHTML}<tr class="tot"><td colspan="2">TOTAL — ${vcs.length} contract(s)${manualInvs.length?' + manual invoices':''}</td><td>$${tContract.toLocaleString()}</td><td>$${tPaid.toLocaleString()}</td><td>$${tBal.toLocaleString()}</td><td>${tPct}%</td></tr></tbody></table>
-  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">Livio Building Systems · ${p.name} · ${new Date().toLocaleDateString()}</div>
+  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS} · ${p.name} · ${new Date().toLocaleDateString()}</div>
   </body></html>`;
 
   const win=window.open('','_blank');if(!win){toast('⚠ Pop-up blocked');return;}
@@ -5169,9 +5252,10 @@ function _doVendorNameLedgerExcel(p,vendorName){
     let tContract=0,tPaid=0;
     const data=[
       ['VENDOR PAYMENT LEDGER — '+vendorName.toUpperCase()],
-      ['Project:',p.name,'','Address:',p.address||''],
-      ['Permit:',p.permit||'','','Generated:',new Date().toLocaleDateString()],
-      ['Vendor:',vendorName,'','Contracts:',vcs.length],
+      ['Project:',p.name,'','Project Address:',getProjectAddressLine(p)],
+      ['Livio Address:',LIVIO_OFFICE_ADDRESS,'','Generated:',new Date().toLocaleDateString()],
+      ['Permit:',p.permit||'','','Contracts:',vcs.length],
+      ['Vendor:',vendorName],
       [],
       ['Contract #','Trade','Contract Amount','Paid','Balance Due','Progress %','Invoice #','Milestone','Inv. Amount','Inv. Paid','Inv. Balance','Status'],
     ];
@@ -5254,7 +5338,7 @@ function exportAllVendorNameLedgerPDF(){
   .meta{color:#6b6a64;font-size:10px;margin-bottom:14px;line-height:1.8}
   @media print{body{padding:14px}@page{margin:12mm}}</style></head><body>
   <h1>All Vendor Payment Ledgers</h1>
-  <div class="meta">${p.name} · ${p.address||''}<br>Permit: ${p.permit||'—'} · Livio Building Systems · ${new Date().toLocaleDateString()}</div>
+  <div class="meta">${p.name} · ${getProjectAddressLine(p)}<br>Livio Address: ${LIVIO_OFFICE_ADDRESS}<br>Permit: ${p.permit||'—'} · ${LIVIO_COMPANY_NAME} · ${new Date().toLocaleDateString()}</div>
   <div style="display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap">
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Total Contract</div><div style="font-size:18px;font-weight:700">$${allContract.toLocaleString()}</div></div>
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Total Paid</div><div style="font-size:18px;font-weight:700;color:#2D6A0F">$${allPaid.toLocaleString()}</div></div>
@@ -5262,7 +5346,7 @@ function exportAllVendorNameLedgerPDF(){
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Overall Progress</div><div style="font-size:18px;font-weight:700;color:${allPct===100?'#2D6A0F':'#A86200'}">${allPct}%</div></div>
   </div>
   ${vendorSections}
-  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">Livio Building Systems · ${p.name} · ${new Date().toLocaleDateString()}</div>
+  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS} · ${p.name} · ${new Date().toLocaleDateString()}</div>
   </body></html>`;
 
   const win=window.open('','_blank');if(!win){toast('⚠ Pop-up blocked');return;}
@@ -5297,7 +5381,8 @@ function _doAllVendorLedgerExcel(p){
     const summary=[
       ['ALL VENDOR PAYMENT LEDGER'],
       ['Project:',p.name,'','Generated:',new Date().toLocaleDateString()],
-      ['Address:',p.address||'','','Permit:',p.permit||''],
+      ['Project Address:',getProjectAddressLine(p),'','Permit:',p.permit||''],
+      ['Livio Address:',LIVIO_OFFICE_ADDRESS],
       [],
       ['Vendor','Contracts','Contract Amount','Total Paid','Total Balance','Progress %'],
     ];
@@ -5395,7 +5480,7 @@ function exportAllTradeLedgerPDF(){
   .meta{color:#6b6a64;font-size:10px;margin-bottom:14px;line-height:1.8}
   @media print{body{padding:14px}@page{margin:12mm}}</style></head><body>
   <h1>All Trade Payment Ledgers</h1>
-  <div class="meta">${p.name} · ${p.address||''}<br>Permit: ${p.permit||'—'} · Livio Building Systems · ${new Date().toLocaleDateString()}</div>
+  <div class="meta">${p.name} · ${getProjectAddressLine(p)}<br>Livio Address: ${LIVIO_OFFICE_ADDRESS}<br>Permit: ${p.permit||'—'} · ${LIVIO_COMPANY_NAME} · ${new Date().toLocaleDateString()}</div>
   <div style="display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap">
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Total Contract</div><div style="font-size:18px;font-weight:700">$${allContract.toLocaleString()}</div></div>
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Total Paid</div><div style="font-size:18px;font-weight:700;color:#2D6A0F">$${allPaid.toLocaleString()}</div></div>
@@ -5403,7 +5488,7 @@ function exportAllTradeLedgerPDF(){
     <div style="border:1px solid #ddd;border-radius:5px;padding:8px 14px;text-align:center"><div style="font-size:9px;text-transform:uppercase;color:#777">Overall Progress</div><div style="font-size:18px;font-weight:700;color:${allPct===100?'#2D6A0F':'#A86200'}">${allPct}%</div></div>
   </div>
   ${tradeSections}
-  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">Livio Building Systems · ${p.name} · ${new Date().toLocaleDateString()}</div>
+  <div style="margin-top:14px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">${LIVIO_COMPANY_NAME} · ${LIVIO_OFFICE_ADDRESS} · ${p.name} · ${new Date().toLocaleDateString()}</div>
   </body></html>`;
 
   const win=window.open('','_blank');if(!win){toast('⚠ Pop-up blocked');return;}
@@ -5438,7 +5523,8 @@ function _doAllTradeLedgerExcel(p){
     const summary=[
       ['ALL TRADE PAYMENT LEDGER'],
       ['Project:',p.name,'','Generated:',new Date().toLocaleDateString()],
-      ['Address:',p.address||'','','Permit:',p.permit||''],
+      ['Project Address:',getProjectAddressLine(p),'','Permit:',p.permit||''],
+      ['Livio Address:',LIVIO_OFFICE_ADDRESS],
       [],
       ['Trade','Vendors','Contract Amount','Total Paid','Total Balance','Progress %'],
     ];
@@ -5609,12 +5695,12 @@ function exportInvoicePDF(){
     +'table{width:100%;border-collapse:collapse}th{background:#0C1B2E;color:#fff;padding:6px 8px;font-size:9px;text-transform:uppercase;text-align:left}'
     +'.tot td{background:#0C1B2E;color:#fff;font-weight:700}@media print{body{padding:14px}@page{margin:12mm}}</style></head><body>'
     +'<h1>Invoice Tracker Report</h1>'
-    +'<div class="meta">'+p.name+' &nbsp;&middot;&nbsp; '+(p.address||'')+'<br>Permit: '+(p.permit||'&mdash;')+' &nbsp;&middot;&nbsp; Livio Building Systems &nbsp;&middot;&nbsp; '+new Date().toLocaleDateString()+'</div>'
+    +'<div class="meta">'+p.name+' &nbsp;&middot;&nbsp; '+getProjectAddressLine(p)+'<br>Livio Address: '+LIVIO_OFFICE_ADDRESS+'<br>Permit: '+(p.permit||'&mdash;')+' &nbsp;&middot;&nbsp; '+LIVIO_COMPANY_NAME+' &nbsp;&middot;&nbsp; '+new Date().toLocaleDateString()+'</div>'
     +'<table><thead><tr><th>Subcontractor</th><th>Invoice #</th><th>Description</th><th>Invoice Date</th><th>Due Date</th><th>Amount</th><th>Status</th><th>Outstanding</th></tr></thead>'
     +'<tbody>'+rows
     +'<tr class="tot"><td colspan="5">TOTAL</td><td>$'+totalInvoiced.toLocaleString()+'</td><td style="color:#9FE1CB">&#10003; $'+totalPaid.toLocaleString()+'</td><td style="color:'+(totalDue>0?'#F09595':'#9FE1CB')+'">$'+totalDue.toLocaleString()+'</td></tr>'
     +'</tbody></table>'
-    +'<div style="margin-top:12px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">Livio Building Systems &middot; '+p.name+' &middot; Generated '+new Date().toLocaleDateString()+'</div>'
+    +'<div style="margin-top:12px;font-size:9px;color:#999;text-align:center;border-top:1px solid #eee;padding-top:6px">'+LIVIO_COMPANY_NAME+' &middot; '+LIVIO_OFFICE_ADDRESS+' &middot; '+p.name+' &middot; Generated '+new Date().toLocaleDateString()+'</div>'
     +'</body></html>';
 
   const win=window.open('','_blank');
@@ -5644,8 +5730,9 @@ function _doInvExcel(p){
     const approved=(p.quotes||[]).filter(q=>q.status==='approved');
     const data=[
       ['INVOICE TRACKER — '+p.name],
-      ['Project:',p.name,'','Address:',p.address||''],
-      ['Permit:',p.permit||'','','Generated:',new Date().toLocaleDateString()],
+      ['Project:',p.name,'','Project Address:',getProjectAddressLine(p)],
+      ['Livio Address:',LIVIO_OFFICE_ADDRESS,'','Generated:',new Date().toLocaleDateString()],
+      ['Permit:',p.permit||''],
       [],
       ['Subcontractor','Invoice #','Description','Invoice Date','Due Date','Amount','Status','Date Paid','Outstanding'],
     ];
@@ -5861,12 +5948,12 @@ function generateVendorContract(vid){
     +'</style></head><body>'
     +'<div class="header">'
       +'<div><div class="logo">LIVI<span>O</span></div><div style="font-size:10px;color:#6b6a64;margin-top:3px">Building Systems</div></div>'
-      +'<div style="text-align:right"><div style="font-size:10px;color:#6b6a64">Project</div><div style="font-size:13px;font-weight:700">'+proj_data.name+'</div><div style="font-size:10px;color:#6b6a64;margin-top:2px">'+proj_data.address+'</div><div style="font-size:10px;color:#6b6a64">Permit: '+(proj_data.permit||'—')+'</div></div>'
+      +'<div style="text-align:right"><div style="font-size:10px;color:#6b6a64">Project</div><div style="font-size:13px;font-weight:700">'+proj_data.name+'</div><div style="font-size:10px;color:#6b6a64;margin-top:2px">'+getProjectAddressLine(proj_data)+'</div><div style="font-size:10px;color:#6b6a64">Permit: '+(proj_data.permit||'—')+'</div></div>'
     +'</div>'
     +'<div class="contract-title">SUBCONTRACT AGREEMENT</div>'
     +'<div class="contract-no">Contract No: '+(v.contractNo||'—')+' &nbsp;&bull;&nbsp; Date: '+new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})+'</div>'
     +'<div class="parties">'
-      +'<div class="party-box"><div class="party-label">Owner / General Contractor</div><div class="party-name">'+proj_data.name+'</div><div style="font-size:10px;color:#6b6a64;margin-top:4px">'+proj_data.address+'</div></div>'
+      +'<div class="party-box"><div class="party-label">Owner / General Contractor</div><div class="party-name">'+LIVIO_COMPANY_NAME+'</div><div style="font-size:10px;color:#6b6a64;margin-top:4px">'+LIVIO_OFFICE_ADDRESS+'</div><div style="font-size:10px;color:#6b6a64;margin-top:4px">Project: '+proj_data.name+'</div><div style="font-size:10px;color:#6b6a64">'+getProjectAddressLine(proj_data)+'</div></div>'
       +'<div class="party-box"><div class="party-label">Subcontractor</div><div class="party-name">'+v.vendor+'</div>'+(v.vendorEmail?'<div style="font-size:10px;color:#1A6BC4;margin-top:4px">'+v.vendorEmail+'</div>':'')+'</div>'
     +'</div>'
     +'<div class="section"><div class="section-title">1. Contract Details</div>'
@@ -5897,7 +5984,8 @@ function generateVendorContract(vid){
       +'<div class="sig-box">'
         +'<div style="height:50px"></div>'
         +'<div class="sig-label">Owner / GC Signature</div>'
-        +'<div class="sig-name">'+proj_data.name+'</div>'
+        +'<div class="sig-name">'+LIVIO_COMPANY_NAME+'</div>'
+        +'<div style="font-size:9px;color:#6b6a64;margin-top:3px">'+LIVIO_OFFICE_ADDRESS+'</div>'
         +'<div style="font-size:9px;color:#999;margin-top:3px">Date: ___________________</div>'
       +'</div>'
       +'<div class="sig-box">'
@@ -5907,7 +5995,7 @@ function generateVendorContract(vid){
         +'<div style="font-size:9px;color:#999;margin-top:3px">Date: ___________________</div>'
       +'</div>'
     +'</div>'
-    +'<div style="margin-top:24px;font-size:9px;color:#999;text-align:center;border-top:1px solid #e0ddd5;padding-top:8px">Generated by Livio Building Systems &nbsp;&bull;&nbsp; '+new Date().toLocaleDateString()+' &nbsp;&bull;&nbsp; '+proj_data.name+'</div>'
+    +'<div style="margin-top:24px;font-size:9px;color:#999;text-align:center;border-top:1px solid #e0ddd5;padding-top:8px">Generated by '+LIVIO_COMPANY_NAME+' &nbsp;&bull;&nbsp; '+LIVIO_OFFICE_ADDRESS+' &nbsp;&bull;&nbsp; '+new Date().toLocaleDateString()+' &nbsp;&bull;&nbsp; '+proj_data.name+'</div>'
     +'</body></html>';
 
   const win=window.open('','_blank');
@@ -6207,6 +6295,49 @@ function sendContractEmailModal(){
   sendAppEmail({to,subject,message:body})
     .then(function(){closeContractEmailModal();toast('✉ Contract email sent');})
     .catch(function(err){console.error('Email error:',err);toast('⚠ Email send failed: '+err.message,'error',6000);});
+}
+
+openLienEmail = function(invId, waiverType){
+  const data=getLienWaiverEmailData(invId, waiverType);
+  if(!data)return;
+  const { vendorName, projName, projAddr, invNo, invAmt, invDate }=data;
+  const waiverDescriptions={
+    'Conditional Progress':'Conditional Waiver and Release on Progress Payment',
+    'Unconditional Progress':'Unconditional Waiver and Release on Progress Payment',
+    'Conditional Final':'Conditional Waiver and Release on Final Payment',
+    'Unconditional Final':'Unconditional Waiver and Release on Final Payment'
+  };
+  const waiverDesc=waiverDescriptions[waiverType]||waiverType+' Lien Waiver';
+  const conditionalNote=waiverType.startsWith('Conditional')
+    ?'\n\nNote: This waiver is CONDITIONAL and becomes effective only upon receipt and clearance of the payment referenced herein.'
+    :'\n\nNote: This waiver is UNCONDITIONAL. By signing, you waive all lien rights for the payment described above, regardless of whether payment has been received.';
+  const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nProject Address: ${projAddr}\nLivio Address: ${LIVIO_OFFICE_ADDRESS}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\nPayment Amount: ${invAmt}${conditionalNote}\n\nReply Email: ${LIVIO_REPLY_EMAIL}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\n${getLivioEmailSignature()}`;
+
+  vEl('lien-email-invid').value=invId;
+  vEl('lien-email-type').value=waiverType;
+  vEl('lien-email-title').textContent=waiverType+' Lien Waiver';
+  vEl('lien-email-to').value=data.vendorEmail||getVendorEmailAcrossProjects(vendorName);
+  vEl('lien-email-subject').value=waiverDesc+' — '+projName+' / Inv #'+invNo;
+  vEl('lien-email-body').value=body;
+  const statusEl=vEl('lien-email-status');
+  if(statusEl) statusEl.innerHTML=getEmailStatusMarkup(getEmailConfig());
+  vEl('mo-lien-email').classList.add('open');
+}
+
+openContractEmailModal = function(vid){
+  const p=proj(); if(!p)return;
+  const v=(p.vendors||[]).find(x=>x.id===vid); if(!v)return;
+  const email=(v.vendorEmail||getVendorEmailAcrossProjects(v.vendor)||'').trim();
+  const subject='Subcontract Agreement — '+v.vendor+' / '+p.name;
+  const msPart=(v.milestones||[]).length?'\n\nPayment Milestones:\n'+v.milestones.map(function(ms){return'  • '+ms.name+' ($'+Number(ms.amount||0).toLocaleString()+')';}).join('\n'):'';
+  const body='Dear '+v.vendor+',\n\nPlease find attached the Subcontract Agreement for:\n\nProject: '+p.name+'\nProject Address: '+getProjectAddressLine(p)+'\nLivio Address: '+LIVIO_OFFICE_ADDRESS+'\nContract #: '+(v.contractNo||'N/A')+'\nContract Value: $'+Number(v.amount||0).toLocaleString()+msPart+'\n\nReply Email: '+LIVIO_REPLY_EMAIL+'\n\nPlease review, sign, and return at your earliest convenience.\n\nBest regards,\n'+getLivioEmailSignature();
+  vEl('cemail-vid').value=vid;
+  vEl('cemail-to').value=email;
+  vEl('cemail-subject').value=subject;
+  vEl('cemail-body').value=body;
+  const statusEl=vEl('cemail-status');
+  if(statusEl) statusEl.innerHTML=getEmailStatusMarkup(getEmailConfig());
+  vEl('mo-contract-email').classList.add('open');
 }
 
 function delVendor(vid){

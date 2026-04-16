@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 
 const RESEND_API_BASE = 'https://api.resend.com';
+const DEFAULT_REPLY_TO = String(process.env.EMAIL_REPLY_TO || 'ap@golivio.com').trim();
 
 function getEmailProvider() {
   if (String(process.env.RESEND_API_KEY || '').trim()) return 'resend';
@@ -68,6 +69,11 @@ function getFromIdentity(fromName) {
     fromAddress,
     from: `${displayName} <${fromAddress}>`
   };
+}
+
+function getReplyToAddress(replyTo) {
+  const value = String(replyTo || DEFAULT_REPLY_TO || '').trim();
+  return value || undefined;
 }
 
 function parseEmailList(value) {
@@ -177,7 +183,8 @@ async function sendViaResend({ to, cc, subject, message, fromName, replyTo, atta
   };
 
   if (ccList.length) payload.cc = ccList;
-  if (replyTo) payload.reply_to = replyTo;
+  const normalizedReplyTo = getReplyToAddress(replyTo);
+  if (normalizedReplyTo) payload.reply_to = normalizedReplyTo;
   if (attachmentList.length) {
     payload.attachments = attachmentList.map((item) => ({
       filename: item.filename,
@@ -210,11 +217,12 @@ async function sendViaSmtp({ to, cc, subject, message, fromName, replyTo, smtpOv
   const { from } = getFromIdentity(fromName);
   const attachmentList = normalizeAttachments(attachments);
 
+  const normalizedReplyTo = getReplyToAddress(replyTo);
   const mailOptions = {
     from,
     to,
     cc: cc || undefined,
-    replyTo: replyTo || undefined,
+    replyTo: normalizedReplyTo,
     subject,
     text: message,
     html: `<pre style="font-family:Arial,sans-serif;font-size:13px;white-space:pre-wrap;line-height:1.7">${escapeHtml(message)}</pre>`,
