@@ -6003,6 +6003,21 @@ function generateVendorContract(vid){
   toast('🖨 Contract opened — Print → Save as PDF');
 }
 
+function resolveLienWaiverPayment(inv, waiverType, partialPaymentId){
+  const partialPayments=Array.isArray(inv?.partialPayments)?inv.partialPayments:[];
+  const linkedPartial=partialPaymentId ? partialPayments.find(pp=>pp.id===partialPaymentId) : null;
+  const latestPartial=!linkedPartial && partialPayments.length ? partialPayments[partialPayments.length-1] : null;
+  const usePartial=(waiverType||'').startsWith('Conditional') ? (linkedPartial||latestPartial) : null;
+  const amountValue=usePartial ? Number(usePartial.amount||0) : Number(inv?.amount||0);
+  const dateValue=usePartial?.date || inv?.invoiceDate || '';
+  return {
+    partialPaymentId: usePartial?.id || '',
+    paymentAmount: Number.isFinite(amountValue) ? amountValue : 0,
+    paymentDate: dateValue,
+    isPartialPayment: !!usePartial
+  };
+}
+
 function getLienWaiverEmailData(invId, waiverType, partialPaymentId){
   const p=proj(); if(!p)return null;
   const inv=(p.invoices||[]).find(x=>x.id===invId); if(!inv)return null;
@@ -6015,12 +6030,9 @@ function getLienWaiverEmailData(invId, waiverType, partialPaymentId){
   const projName=p.name||'Project';
   const projAddr=p.address||'';
   const invNo=inv.invoiceNo||invId;
-  const partialPayments=Array.isArray(inv.partialPayments)?inv.partialPayments:[];
-  const linkedPartial=partialPaymentId ? partialPayments.find(pp=>pp.id===partialPaymentId) : null;
-  const latestPartial=!linkedPartial && partialPayments.length ? partialPayments[partialPayments.length-1] : null;
-  const conditionalPartial=(waiverType||'').startsWith('Conditional') ? (linkedPartial||latestPartial) : null;
-  const paymentAmount=conditionalPartial ? Number(conditionalPartial.amount||0) : Number(inv.amount||0);
-  const paymentDate=conditionalPartial?.date || inv.invoiceDate || '';
+  const resolvedPayment=resolveLienWaiverPayment(inv, waiverType, partialPaymentId);
+  const paymentAmount=resolvedPayment.paymentAmount;
+  const paymentDate=resolvedPayment.paymentDate;
   const invAmt=fmtMoney(paymentAmount);
   const invDate=paymentDate?fmtDate(paymentDate):'';
 
@@ -6038,7 +6050,7 @@ function getLienWaiverEmailData(invId, waiverType, partialPaymentId){
 
   const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nAddress: ${projAddr}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\nPayment Amount: ${invAmt}${conditionalNote}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\nLivio Building Systems`;
 
-  return { p, inv, q, vendorName, vendorEmail, projName, projAddr, invNo, invAmt, invDate, waiverDesc, body, partialPaymentId: conditionalPartial?.id||'' };
+  return { p, inv, q, vendorName, vendorEmail, projName, projAddr, invNo, invAmt, invDate, waiverDesc, body, partialPaymentId: resolvedPayment.partialPaymentId, isPartialPayment: resolvedPayment.isPartialPayment };
 }
 function buildLienWaiverPdfAttachment(invId, waiverType, partialPaymentId){
   const data=getLienWaiverEmailData(invId, waiverType, partialPaymentId);
@@ -6213,7 +6225,7 @@ function buildLienWaiverPdfAttachment(invId, waiverType, partialPaymentId){
 function openLienEmail(invId, waiverType, partialPaymentId){
   const data=getLienWaiverEmailData(invId, waiverType, partialPaymentId);
   if(!data)return;
-  const { vendorName, projName, projAddr, invNo, invAmt, invDate }=data;
+  const { vendorName, projName, projAddr, invNo, invAmt, invDate, isPartialPayment }=data;
 
   const waiverDescriptions={
     'Conditional Progress':'Conditional Waiver and Release on Progress Payment',
@@ -6227,7 +6239,8 @@ function openLienEmail(invId, waiverType, partialPaymentId){
     ?'\n\nNote: This waiver is CONDITIONAL and becomes effective only upon receipt and clearance of the payment referenced herein.'
     :'\n\nNote: This waiver is UNCONDITIONAL. By signing, you waive all lien rights for the payment described above, regardless of whether payment has been received.';
 
-  const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nAddress: ${projAddr}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\nPayment Amount: ${invAmt}${conditionalNote}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\nLivio Building Systems`;
+  const paymentLabel=isPartialPayment?'Partial Payment Amount':'Payment Amount';
+  const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nAddress: ${projAddr}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\n${paymentLabel}: ${invAmt}${conditionalNote}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\nLivio Building Systems`;
 
   vEl('lien-email-invid').value=invId;
   vEl('lien-email-type').value=waiverType;
@@ -6307,7 +6320,7 @@ function sendContractEmailModal(){
 openLienEmail = function(invId, waiverType, partialPaymentId){
   const data=getLienWaiverEmailData(invId, waiverType, partialPaymentId);
   if(!data)return;
-  const { vendorName, projName, projAddr, invNo, invAmt, invDate }=data;
+  const { vendorName, projName, projAddr, invNo, invAmt, invDate, isPartialPayment }=data;
   const waiverDescriptions={
     'Conditional Progress':'Conditional Waiver and Release on Progress Payment',
     'Unconditional Progress':'Unconditional Waiver and Release on Progress Payment',
@@ -6318,7 +6331,8 @@ openLienEmail = function(invId, waiverType, partialPaymentId){
   const conditionalNote=waiverType.startsWith('Conditional')
     ?'\n\nNote: This waiver is CONDITIONAL and becomes effective only upon receipt and clearance of the payment referenced herein.'
     :'\n\nNote: This waiver is UNCONDITIONAL. By signing, you waive all lien rights for the payment described above, regardless of whether payment has been received.';
-  const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nProject Address: ${projAddr}\nLivio Address: ${LIVIO_OFFICE_ADDRESS}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\nPayment Amount: ${invAmt}${conditionalNote}\n\nReply Email: ${LIVIO_REPLY_EMAIL}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\n${getLivioEmailSignature()}`;
+  const paymentLabel=isPartialPayment?'Partial Payment Amount':'Payment Amount';
+  const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nProject Address: ${projAddr}\nLivio Address: ${LIVIO_OFFICE_ADDRESS}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\n${paymentLabel}: ${invAmt}${conditionalNote}\n\nReply Email: ${LIVIO_REPLY_EMAIL}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\n${getLivioEmailSignature()}`;
 
   vEl('lien-email-invid').value=invId;
   vEl('lien-email-type').value=waiverType;
