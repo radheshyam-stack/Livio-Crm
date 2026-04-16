@@ -6004,6 +6004,164 @@ function generateVendorContract(vid){
   toast('🖨 Contract opened — Print → Save as PDF');
 }
 
+function getVendorContractEmailData(vid){
+  const p=proj(); if(!p)return null;
+  const v=(p.vendors||[]).find(x=>x.id===vid); if(!v)return null;
+  const vdir=v.vdirId ? getVDirList().find(x=>x.id===v.vdirId) : null;
+  const email=(v.vendorEmail||vdir?.email||getVendorEmailAcrossProjects(v.vendor)||'').trim();
+  const subject='Subcontract Agreement â€” '+v.vendor+' / '+p.name;
+  const msPart=(v.milestones||[]).length?'\n\nPayment Milestones:\n'+v.milestones.map(function(ms){return'  â€¢ '+ms.name+' ($'+Number(ms.amount||0).toLocaleString()+')';}).join('\n'):'';
+  const body='Dear '+v.vendor+',\n\nPlease find attached the Subcontract Agreement for:\n\nProject: '+p.name+'\nProject Address: '+getProjectAddressLine(p)+'\nLivio Address: '+LIVIO_OFFICE_ADDRESS+'\nContract #: '+(v.contractNo||'N/A')+'\nContract Value: $'+Number(v.amount||0).toLocaleString()+msPart+'\n\nReply Email: '+LIVIO_REPLY_EMAIL+'\n\nPlease review, sign, and return at your earliest convenience.\n\nBest regards,\n'+getLivioEmailSignature();
+  return { p, v, vdir, email, subject, body };
+}
+
+function buildVendorContractPdfAttachment(vid){
+  const data=getVendorContractEmailData(vid);
+  if(!data) throw new Error('Vendor contract not found.');
+  if(!window.jspdf||!window.jspdf.jsPDF) throw new Error('PDF library not loaded yet. Try again.');
+
+  const { p, v, vdir }=data;
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const pageH=doc.internal.pageSize.getHeight();
+  const left=40;
+  const right=40;
+  const width=pageW-left-right;
+  let y=44;
+
+  const ensureSpace=(needed=24)=>{
+    if(y+needed>pageH-46){
+      doc.addPage();
+      y=44;
+    }
+  };
+  const writeWrapped=(text,size=10,color=[60,60,60],gap=14,font='normal')=>{
+    if(!text) return;
+    doc.setFont('helvetica',font);
+    doc.setFontSize(size);
+    doc.setTextColor(color[0],color[1],color[2]);
+    const lines=doc.splitTextToSize(String(text),width);
+    ensureSpace(lines.length*gap+6);
+    doc.text(lines,left,y);
+    y+=lines.length*gap;
+  };
+  const writeLabelValue=(label,value)=>{
+    if(!value && value!==0) return;
+    ensureSpace(18);
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(10);
+    doc.setTextColor(12,27,46);
+    doc.text(label,left,y);
+    doc.setFont('helvetica','normal');
+    doc.setTextColor(55,55,55);
+    const labelW=doc.getTextWidth(label)+8;
+    const lines=doc.splitTextToSize(String(value),Math.max(120,width-labelW));
+    doc.text(lines,left+labelW,y);
+    y+=Math.max(16,lines.length*14);
+  };
+  const writeSection=(title,body)=>{
+    if(!body) return;
+    ensureSpace(28);
+    doc.setDrawColor(12,27,46);
+    doc.setLineWidth(1);
+    doc.line(left,y,pageW-right,y);
+    y+=14;
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(11);
+    doc.setTextColor(12,27,46);
+    doc.text(title,left,y);
+    y+=12;
+    writeWrapped(body,10,[60,60,60],14,'normal');
+    y+=6;
+  };
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(20);
+  doc.setTextColor(12,27,46);
+  doc.text('SUBCONTRACT AGREEMENT',left,y);
+  y+=18;
+  doc.setFontSize(11);
+  doc.setTextColor(26,107,196);
+  doc.text(LIVIO_COMPANY_NAME,left,y);
+  y+=16;
+  writeWrapped(LIVIO_OFFICE_ADDRESS,10,[107,106,100],13);
+  y+=6;
+
+  writeLabelValue('Project:',p.name||'');
+  writeLabelValue('Project Address:',getProjectAddressLine(p));
+  writeLabelValue('Subcontractor:',v.vendor||'');
+  if(vdir?.address) writeLabelValue('Vendor Address:',vdir.address);
+  if(v.vendorEmail||vdir?.email) writeLabelValue('Vendor Email:',v.vendorEmail||vdir?.email);
+  writeLabelValue('Contract #:',v.contractNo||'â€”');
+  writeLabelValue('Contract Type:',v.contractType||'â€”');
+  writeLabelValue('Contract Value:',fmtMoney(v.amount||0));
+  writeLabelValue('Start Date:',v.startDate?fmtDate(v.startDate):'â€”');
+  writeLabelValue('End Date:',v.endDate?fmtDate(v.endDate):'â€”');
+  writeLabelValue('Generated:',new Date().toLocaleDateString());
+  y+=6;
+
+  writeSection('Scope of Work',v.scope||'No scope provided.');
+  if(v.exclusions) writeSection('Exclusions',v.exclusions);
+
+  ensureSpace(30);
+  doc.setDrawColor(12,27,46);
+  doc.setLineWidth(1);
+  doc.line(left,y,pageW-right,y);
+  y+=14;
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
+  doc.setTextColor(12,27,46);
+  doc.text('Payment Schedule',left,y);
+  y+=14;
+  if((v.milestones||[]).length){
+    (v.milestones||[]).forEach((ms,index)=>{
+      writeWrapped((index+1)+'. '+(ms.name||'Milestone'),10,[12,27,46],14,'bold');
+      writeWrapped('Amount: '+fmtMoney(ms.amount||0)+(ms.dueDate?'   Due: '+fmtDate(ms.dueDate):''),9.5,[70,70,70],13,'normal');
+      y+=4;
+    });
+  }else{
+    writeWrapped('No payment milestones specified.',10,[120,120,120],14,'italic');
+  }
+  y+=8;
+
+  if(v.notes) writeSection('Special Conditions',v.notes);
+
+  ensureSpace(90);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(11);
+  doc.setTextColor(12,27,46);
+  doc.text('Signatures',left,y);
+  y+=28;
+  doc.setDrawColor(120,120,120);
+  doc.line(left,y,left+220,y);
+  doc.line(pageW-right-220,y,pageW-right,y);
+  y+=16;
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.setTextColor(95,95,95);
+  doc.text(LIVIO_COMPANY_NAME,left,y);
+  doc.text(v.vendor||'Subcontractor',pageW-right-220,y);
+  y+=14;
+  doc.text('Owner / General Contractor',left,y);
+  doc.text('Subcontractor Signature',pageW-right-220,y);
+
+  doc.setFont('helvetica','italic');
+  doc.setFontSize(8);
+  doc.setTextColor(120,120,120);
+  doc.text('Generated from Livio vendor contracts',left,pageH-24);
+
+  const dataUri=doc.output('datauristring');
+  const content=String(dataUri).split(',')[1]||'';
+  const safeVendor=String(v.vendor||'vendor-contract').replace(/[^a-z0-9-_]+/gi,'_');
+  const safeProject=String(p.name||'project').replace(/[^a-z0-9-_]+/gi,'_');
+  return {
+    filename:`${safeVendor}-${safeProject}-contract.pdf`,
+    content,
+    contentType:'application/pdf'
+  };
+}
+
 function resolveLienWaiverPayment(inv, waiverType, partialPaymentId){
   const partialPayments=Array.isArray(inv?.partialPayments)?inv.partialPayments:[];
   const linkedPartial=partialPaymentId ? partialPayments.find(pp=>pp.id===partialPaymentId) : null;
@@ -6361,6 +6519,24 @@ openContractEmailModal = function(vid){
   const statusEl=vEl('cemail-status');
   if(statusEl) statusEl.innerHTML=getEmailStatusMarkup(getEmailConfig());
   vEl('mo-contract-email').classList.add('open');
+}
+
+sendContractEmailModal = function(){
+  const to=vEl('cemail-to').value.trim();
+  const subject=vEl('cemail-subject').value.trim();
+  const body=vEl('cemail-body').value.trim();
+  const vid=vEl('cemail-vid').value.trim();
+  if(!to){toast('âš  Recipient email is required');return;}
+  let attachments=[];
+  try{
+    if(vid) attachments=[buildVendorContractPdfAttachment(vid)];
+  }catch(err){
+    toast('âš  Could not build contract PDF: '+err.message,'error',6000);
+    return;
+  }
+  sendAppEmail({to,subject,message:body,attachments})
+    .then(function(){closeContractEmailModal();toast('âœ‰ Contract email sent with PDF attachment');})
+    .catch(function(err){console.error('Email error:',err);toast('âš  Email send failed: '+err.message,'error',6000);});
 }
 
 function delVendor(vid){
