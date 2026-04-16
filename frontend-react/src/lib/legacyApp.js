@@ -7731,6 +7731,8 @@ export function initLegacyApp() {
   window.deleteVDir = deleteVDir;
 
   // Vendors (contracts)
+  window.generateVendorContract = generateVendorContract;
+  window.sendContractEmail = sendContractEmail;
   window.venDirSelect = venDirSelect;
   window.venAddMilestone = venAddMilestone;
   window.venMsChange = venMsChange;
