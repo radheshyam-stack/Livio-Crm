@@ -407,6 +407,16 @@ function getHostApp(){
   }catch{}
   return null;
 }
+function getHostProject(host=getHostApp()){
+  try{
+    const db=host?.DB;
+    const projects=db?.projects;
+    if(!Array.isArray(projects) || !projects.length) return null;
+    const activeId=db.activeId ?? db.activeProjectId ?? projects[0]?.id ?? null;
+    return projects.find(p=>p.id===activeId) || projects[0] || null;
+  }catch{}
+  return null;
+}
 function readLocalLivioDB(){
   try{return JSON.parse(localStorage.getItem(LIVIO_KEY)||'{}')}catch{return{}}
 }
@@ -426,12 +436,13 @@ function persistLivioDB(db){
   }
   localStorage.setItem(LIVIO_KEY,JSON.stringify(db));
 }
-function deriveMomentumState(db){
+function deriveMomentumState(db, hostProject=null){
   const safeDb=db||{};
-  const projects=(safeDb.projects||[]).map(p=>({id:p.id,name:p.name,color:p.color||'#2dd4a0',desc:p.address||''}));
+  const sourceProjects=hostProject ? [hostProject] : (safeDb.projects||[]);
+  const projects=sourceProjects.map(p=>({id:p.id,name:p.name,color:p.color||'#2dd4a0',desc:p.address||''}));
   const tasks=[];
   const statusMap={active:'inprogress',inprogress:'inprogress',starting:'inprogress',hold:'review',caloshahold:'review',complete:'done'};
-  (safeDb.projects||[]).forEach(p=>{
+  sourceProjects.forEach(p=>{
     (p.works||[]).forEach(w=>{
       tasks.push({id:w.id,title:w.name,project:p.id,status:statusMap[w.status]||'todo',priority:'med',type:'infra',assignee:'',progress:w.pct||0,start:'',end:''});
     });
@@ -439,12 +450,14 @@ function deriveMomentumState(db){
       tasks.push({id:m.id,title:m.name,project:p.id,status:m.status==='passed'?'done':m.status==='failed'?'review':'todo',priority:'high',type:'feature',assignee:'',progress:m.status==='passed'?100:0,start:m.date||'',end:m.date||''});
     });
   });
-  return {projects,tasks,proj:null,view:'kb',zoom:'months',drag:null,gtOpen:{}};
+  return {projects,tasks,proj:hostProject?.id ?? null,view:'kb',zoom:'months',drag:null,gtOpen:{}};
 }
 function readMomentumState(){
   const db=getLivioDB();
-  const base=deriveMomentumState(db);
-  const raw=db.momentumState;
+  const host=getHostApp();
+  const hostProject=getHostProject(host);
+  const base=deriveMomentumState(db,hostProject);
+  const raw=hostProject ? hostProject.momentumState : db.momentumState;
   if(!raw || !Array.isArray(raw.projects) || !Array.isArray(raw.tasks)) return base;
   const mergedProjects=[...raw.projects.map(p=>({...p}))];
   base.projects.forEach(bp=>{
@@ -456,7 +469,15 @@ function readMomentumState(){
 }
 function saveMomentumState(){
   const db=getLivioDB();
-  db.momentumState={projects:cloneData(S.projects,[]),tasks:cloneData(S.tasks,[]),proj:S.proj ?? null,view:S.view ?? 'kb',zoom:S.zoom ?? 'months',gtOpen:cloneData(S.gtOpen,{})};
+  const host=getHostApp();
+  const hostProject=getHostProject(host);
+  const nextState={projects:cloneData(S.projects,[]),tasks:cloneData(S.tasks,[]),proj:S.proj ?? null,view:S.view ?? 'kb',zoom:S.zoom ?? 'months',gtOpen:cloneData(S.gtOpen,{})};
+  if(hostProject){
+    hostProject.momentumState=nextState;
+    if(db.momentumState) delete db.momentumState;
+  }else{
+    db.momentumState=nextState;
+  }
   persistLivioDB(db);
 }
 

@@ -664,6 +664,12 @@ const DISC_SEED = [
 
 // ── STATE ──
 const DT_STATE_KEY = 'dt_state';
+const DT_LEGACY_KEYS = {
+  days: 'dt_days',
+  disc: 'dt_disc',
+  clients: 'dt_clients',
+  state: DT_STATE_KEY,
+};
 const cloneData = (value, fallback) => {
   if (value == null) return fallback;
   try { return JSON.parse(JSON.stringify(value)); } catch { return fallback; }
@@ -686,15 +692,26 @@ function getHostProject(host=getHostApp()){
   }catch{}
   return null;
 }
-function readFallbackState(){
+function getTrackerStorageKeys(projectId){
+  if(!projectId) return DT_LEGACY_KEYS;
+  const prefix = `dt_${projectId}`;
+  return {
+    days: `${prefix}_days`,
+    disc: `${prefix}_disc`,
+    clients: `${prefix}_clients`,
+    state: `${prefix}_state`,
+  };
+}
+function readFallbackState(projectId=null){
+  const keys = getTrackerStorageKeys(projectId);
   let daysState = [];
   let discState = null;
   let clientsState = [];
   let meta = {};
-  try{ daysState = JSON.parse(localStorage.getItem('dt_days')||'[]'); }catch{}
-  try{ discState = JSON.parse(localStorage.getItem('dt_disc')||'null'); }catch{}
-  try{ clientsState = JSON.parse(localStorage.getItem('dt_clients')||'[]'); }catch{}
-  try{ meta = JSON.parse(localStorage.getItem(DT_STATE_KEY)||'{}') || {}; }catch{}
+  try{ daysState = JSON.parse(localStorage.getItem(keys.days)||'[]'); }catch{}
+  try{ discState = JSON.parse(localStorage.getItem(keys.disc)||'null'); }catch{}
+  try{ clientsState = JSON.parse(localStorage.getItem(keys.clients)||'[]'); }catch{}
+  try{ meta = JSON.parse(localStorage.getItem(keys.state)||'{}') || {}; }catch{}
   return {
     days: Array.isArray(daysState) ? daysState : [],
     discItems: Array.isArray(discState) ? discState : cloneData(DISC_SEED, []),
@@ -723,11 +740,12 @@ function applyTrackerState(raw){
   curDiscId = state.curDiscId && discItems.some(d=>d.id===state.curDiscId) ? state.curDiscId : null;
   curClient = state.curClient && clients.some(c=>c.id===state.curClient) ? state.curClient : null;
 }
-function writeFallbackState(state){
-  localStorage.setItem('dt_days', JSON.stringify(state.days));
-  localStorage.setItem('dt_disc', JSON.stringify(state.discItems));
-  localStorage.setItem('dt_clients', JSON.stringify(state.clients));
-  localStorage.setItem(DT_STATE_KEY, JSON.stringify({
+function writeFallbackState(state, projectId=null){
+  const keys = getTrackerStorageKeys(projectId);
+  localStorage.setItem(keys.days, JSON.stringify(state.days));
+  localStorage.setItem(keys.disc, JSON.stringify(state.discItems));
+  localStorage.setItem(keys.clients, JSON.stringify(state.clients));
+  localStorage.setItem(keys.state, JSON.stringify({
     curDay: state.curDay ?? null,
     curDiscId: state.curDiscId ?? null,
     curClient: state.curClient ?? null,
@@ -738,7 +756,7 @@ function readTrackerState(){
   if(project){
     return project.dailyTracker || {};
   }
-  return readFallbackState();
+  return readFallbackState(project?.id ?? null);
 }
 function saveTrackerState(){
   const state = buildTrackerState();
@@ -753,7 +771,7 @@ function saveTrackerState(){
       console.error('daily tracker shared save failed:', err);
     }
   }
-  writeFallbackState(state);
+  writeFallbackState(state, project?.id ?? null);
 }
 let days = [];
 let discItems = [];
