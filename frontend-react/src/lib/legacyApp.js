@@ -3726,7 +3726,6 @@ function _buildVCPayLedgerHTML(payGroups, grandContract, grandPaid, p){
 
     const csiQ=(p.quotes||[]).find(q=>vInvs.some(i=>i.quoteId===q.id));
     const csiLabel=v.csi||v.trade||csiQ?.csi||'—';
-    const scopeLabel=v.scope||v.trade||csiQ?.scope||'';
     const milestoneBadges=vInvs.length
       ? `<div style="display:flex;flex-direction:column;gap:3px">${vInvs.map(inv=>{const ms=milestoneSource.find(m=>m.id===inv.milestoneId); const label=ms?.name||(v.isManualGroup?'Manual':''); return label?`<span style="font-size:9px;color:var(--blue);background:var(--blue-l);border:1px solid #B0D0F0;padding:1px 6px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px;display:block" title="${label}">📍 ${label}</span>`:'';}).filter(Boolean).join('')}</div>`
       : '<span style="font-size:10px;color:var(--muted)">—</span>';
@@ -3734,7 +3733,6 @@ function _buildVCPayLedgerHTML(payGroups, grandContract, grandPaid, p){
     return`<tr style="background:${rowBg};border-left:3px solid var(--navy)">
       <td style="padding:10px 14px">
         <div style="font-size:13px;font-weight:700;color:var(--navy)">${v.vendor}</div>
-        ${scopeLabel?`<div style="font-size:10px;color:var(--muted);margin-top:1px">${scopeLabel}</div>`:''}
         <div style="font-size:9px;color:var(--muted);margin-top:2px">${vInvs.length} invoice${vInvs.length!==1?'s':''}</div>
       </td>
       <td style="padding:10px 14px">
