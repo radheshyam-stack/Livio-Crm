@@ -1,10 +1,10 @@
 import React, { useEffect } from 'react';
 import { useApp } from '../store/AppContext';
 import LegacyHtmlFrame from './LegacyHtmlFrame';
-import dailyTrackerHtml from '../../../daily-tracker.html?raw';
-import clientContractHtml from '../../../client-contract.html?raw';
-import clientInvoiceHtml from '../../../client-invoice.html?raw';
-import momentumHtml from '../../../momentum.html?raw';
+import dailyTrackerHtml from '../../daily-tracker.html?raw';
+import clientContractHtml from '../../client-contract.html?raw';
+import clientInvoiceHtml from '../../client-invoice.html?raw';
+import momentumHtml from '../../momentum.html?raw';
 
 export default function PageShell() {
   const { curPage, renderTick } = useApp();
