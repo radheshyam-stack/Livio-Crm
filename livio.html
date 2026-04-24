@@ -1427,7 +1427,7 @@ function loadDB(){
         });
       });
       p.inspections.forEach(i=>{if(!i.files)i.files=[];});
-      if(!p.invoices)p.invoices=[]; if(!p.vendors)p.vendors=[]; if(!p.checklist)p.checklist=[]; if(!p.qaqcLog)p.qaqcLog=[]; if(!p.chkCategories)p.chkCategories=[]; (p.checklist||[]).forEach(it=>{(it.comments||[]).forEach(c=>regFiles(c.files||[]));}); (p.qaqcLog||[]).forEach(it=>regFiles(it.files||[])); (p.checklist||[]).forEach(it=>{if(!it.comments)it.comments=[];}); p.vendors.forEach(v=>regFiles(v.files||[]));
+      if(!p.invoices)p.invoices=[]; if(!p.vendors)p.vendors=[]; if(!p.checklist)p.checklist=[]; if(!p.qaqcLog)p.qaqcLog=[]; if(!p.chkCategories)p.chkCategories=[]; (p.checklist||[]).forEach(it=>{(it.comments||[]).forEach(c=>regFiles(c.files||[]));}); (p.qaqcLog||[]).forEach(it=>regFiles(it.files||[])); (p.checklist||[]).forEach(it=>{if(!it.comments)it.comments=[];}); p.vendors=(p.vendors||[]).map(v=>normalizeVendorContract(v, getVDirList())); p.vendors.forEach(v=>regFiles(v.files||[]));
       p.invoices.forEach(inv=>{if(!inv.files)inv.files=[];});
     });
     return db;
@@ -1445,6 +1445,37 @@ function saveDB(){
     console.error('saveDB error:',e);
   }
   registerAllFiles();
+}
+
+function normalizeVendorContract(entry, vendorDirectory=[]){
+  const raw=(entry&&typeof entry==='object')?entry:{};
+  const vdir=(vendorDirectory||[]).find(v=>v.id===raw.vdirId)||null;
+  const bank=String(raw.bank||raw.bankName||vdir?.bank||'').trim();
+  const acctType=String(raw.acctType||raw.bankAcctType||vdir?.acctType||'').trim();
+  const acct=String(raw.acct||raw.bankAccount||vdir?.acct||'').trim();
+  const routing=String(raw.routing||raw.routingNo||vdir?.routing||'').trim();
+  const zelle=String(raw.zelle||raw.zelleId||vdir?.zelle||'').trim();
+
+  return {
+    ...raw,
+    vendor: String(raw.vendor||vdir?.company||vdir?.name||'').trim(),
+    vendorEmail: String(raw.vendorEmail||vdir?.email||'').trim(),
+    trade: String(raw.trade||vdir?.trade||'').trim(),
+    address: String(raw.address||vdir?.address||'').trim(),
+    license: String(raw.license||vdir?.license||'').trim(),
+    bank,
+    bankName: bank,
+    acctType,
+    bankAcctType: acctType,
+    acct,
+    bankAccount: acct,
+    routing,
+    routingNo: routing,
+    zelle,
+    zelleId: zelle,
+    files: Array.isArray(raw.files)?raw.files:[],
+    milestones: Array.isArray(raw.milestones)?raw.milestones:[]
+  };
 }
 function registerAllFiles(){
   (DB.projects||[]).forEach(p=>{
@@ -2143,9 +2174,9 @@ function renderPayments(){
       const totalPartial=partials.reduce((a,pp)=>a+Number(pp.amount||0),0);
       const remaining=Number(inv.amount||0)-totalPartial;
       const invMsName=vcSource?(vcSource.milestones||[]).find(m=>m.id===inv.milestoneId)?.name||'':'';
-      const payHistoryHTML=partials.length?partials.map(pp=>{const ppFiles=pp.files||[];return`<div style="background:#FAFFFE;border:1px solid var(--border);border-radius:5px;padding:6px 8px;margin-bottom:5px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="color:var(--green);font-weight:700;font-size:11px">✓ $${Number(pp.amount||0).toLocaleString()}</span><span style="color:var(--muted);font-size:9px">${fmtDate(pp.date)||''}</span>${!inv.paid?`<button onclick="removePartialPayment('${inv.id}','${pp.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px" title="Remove">×</button>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0">🔖 Txn #:</span><input type="text" value="${pp.txnNo||''}" placeholder="Transaction / Reference #" onchange="updatePartialTxn('${inv.id}','${pp.id}',this.value)" style="flex:1;font-size:9px;border:1px solid var(--border);border-radius:3px;padding:2px 5px;background:#fff;outline:none"/></div><div style="display:flex;gap:4px;margin-bottom:5px"><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px;justify-content:center" onclick="openLienEmail('${inv.id}','Conditional Progress')">📧 Cond. Progress</button><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px;justify-content:center" onclick="openLienEmail('${inv.id}','Conditional Final')">📧 Cond. Final</button></div>${ppFiles.length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px">${ppFiles.map(f=>`<div style="display:flex;align-items:center;gap:2px;background:var(--blue-l);border:1px solid #B0D0F0;border-radius:3px;padding:2px 5px;max-width:120px"><span style="font-size:9px">${fileIcon(f.name)}</span><span style="font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${f.name}</span><button class="a-dl" onclick="dlFile('${f.id}')" style="font-size:8px;padding:0 3px;background:var(--blue-l);color:var(--blue);border:1px solid #B0D0F0">⬇</button></div>`).join('')}</div>`:''}${!inv.paid?`<button onclick="openModal('ppfiles','${inv.id}|${pp.id}')" class="btn btn-ghost btn-xs" style="font-size:9px;padding:2px 5px;width:100%">📎 ${ppFiles.length?ppFiles.length+' file(s) · + Add':'Attach Supporting File'}</button>`:''}</div>`}).join(''):'';
+      const payHistoryHTML=partials.length?partials.map(pp=>{const ppFiles=pp.files||[];return`<div style="background:#FAFFFE;border:1px solid var(--border);border-radius:5px;padding:6px 8px;margin-bottom:5px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="color:var(--green);font-weight:700;font-size:11px">✓ $${Number(pp.amount||0).toLocaleString()}</span><span style="color:var(--muted);font-size:9px">${fmtDate(pp.date)||''}</span>${!inv.paid?`<button onclick="removePartialPayment('${inv.id}','${pp.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px" title="Remove">×</button>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0">🔖 Txn #:</span><input type="text" value="${pp.txnNo||''}" placeholder="Transaction / Reference #" onchange="updatePartialTxn('${inv.id}','${pp.id}',this.value)" style="flex:1;font-size:9px;border:1px solid var(--border);border-radius:3px;padding:2px 5px;background:#fff;outline:none"/></div><div style="display:flex;gap:4px;margin-bottom:5px"><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px;justify-content:center" onclick="openLienEmail('${inv.id}','Conditional Progress','${pp.id}')">📧 Cond. Progress</button><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px;justify-content:center" onclick="openLienEmail('${inv.id}','Conditional Final','${pp.id}')">📧 Cond. Final</button></div>${ppFiles.length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px">${ppFiles.map(f=>`<div style="display:flex;align-items:center;gap:2px;background:var(--blue-l);border:1px solid #B0D0F0;border-radius:3px;padding:2px 5px;max-width:120px"><span style="font-size:9px">${fileIcon(f.name)}</span><span style="font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${f.name}</span><button class="a-dl" onclick="dlFile('${f.id}')" style="font-size:8px;padding:0 3px;background:var(--blue-l);color:var(--blue);border:1px solid #B0D0F0">⬇</button></div>`).join('')}</div>`:''}${!inv.paid?`<button onclick="openModal('ppfiles','${inv.id}|${pp.id}')" class="btn btn-ghost btn-xs" style="font-size:9px;padding:2px 5px;width:100%">📎 ${ppFiles.length?ppFiles.length+' file(s) · + Add':'Attach Supporting File'}</button>`:''}</div>`}).join(''):'';
       const _maxRemaining=remaining>0?remaining:0;
-      const paidCell=inv.paid?`<div style="background:var(--green-l);border:1px solid #B8DCA0;border-radius:6px;padding:7px 9px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:700;color:var(--green)">✓ Fully Paid</span><button onclick="unmarkInv('${inv.id}')" style="font-size:9px;background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;padding:0">Undo</button></div>${payHistoryHTML}<div style="font-size:10px;font-weight:700;color:var(--green);margin-top:4px;padding-top:4px;border-top:1px solid #B8DCA0">Total: $${Number(inv.amount||0).toLocaleString()}</div></div>`:`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px">${invMsName?`<div style="font-size:9px;font-weight:700;color:var(--blue);background:var(--blue-l);border:1px solid #B0D0F0;border-radius:4px;padding:3px 8px;margin-bottom:6px">📍 Milestone: ${invMsName}</div>`:''}<div style="font-size:9px;color:var(--muted);margin-bottom:5px">Invoice: <strong style="color:var(--text)">$${Number(inv.amount||0).toLocaleString()}</strong> · Max payable: <strong style="color:${_maxRemaining>0?'var(--amber)':'var(--green)'}">$${_maxRemaining.toLocaleString()}</strong></div>${payHistoryHTML}${remaining<Number(inv.amount||0)?`<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid var(--border)">Remaining: $${remaining.toLocaleString()}</div>`:''}<div style="display:flex;gap:4px;margin-bottom:4px"><input type="number" id="invpamt_${inv.id}" min="0.01" max="${_maxRemaining}" step="0.01" oninput="const v=parseFloat(this.value)||0;this.style.border=v>${_maxRemaining}?'2px solid var(--red)':'1px solid var(--border)'" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none" placeholder="Amount (max $${_maxRemaining.toLocaleString()})"/><input type="date" id="invpdate_${inv.id}" value="${localDateStr()}" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none"/></div><div style="display:flex;gap:4px;margin-bottom:5px"><button onclick="addPartialPayment('${inv.id}')" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;font-size:10px">+ Partial Pay</button><button onclick="markInvPaid('${inv.id}')" class="btn btn-green btn-xs" style="flex:1;justify-content:center;font-size:10px">✓ Full Pay</button></div><div style="border-top:1px solid var(--border);padding-top:5px;display:flex;gap:4px"><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px" onclick="openLienEmail('${inv.id}','Conditional Progress')">📧 Cond. Progress</button><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px" onclick="openLienEmail('${inv.id}','Conditional Final')">📧 Cond. Final</button></div></div>`;
+      const paidCell=inv.paid?`<div style="background:var(--green-l);border:1px solid #B8DCA0;border-radius:6px;padding:7px 9px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:700;color:var(--green)">✓ Fully Paid</span><button onclick="unmarkInv('${inv.id}')" style="font-size:9px;background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;padding:0">Undo</button></div>${payHistoryHTML}<div style="font-size:10px;font-weight:700;color:var(--green);margin-top:4px;padding-top:4px;border-top:1px solid #B8DCA0">Total: $${Number(inv.amount||0).toLocaleString()}</div></div>`:`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px">${invMsName?`<div style="font-size:9px;font-weight:700;color:var(--blue);background:var(--blue-l);border:1px solid #B0D0F0;border-radius:4px;padding:3px 8px;margin-bottom:6px">📍 Milestone: ${invMsName}</div>`:''}<div style="font-size:9px;color:var(--muted);margin-bottom:5px">Invoice: <strong style="color:var(--text)">$${Number(inv.amount||0).toLocaleString()}</strong> · Max payable: <strong style="color:${_maxRemaining>0?'var(--amber)':'var(--green)'}">$${_maxRemaining.toLocaleString()}</strong></div>${payHistoryHTML}${remaining<Number(inv.amount||0)?`<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid var(--border)">Remaining: $${remaining.toLocaleString()}</div>`:''}<div style="display:flex;gap:4px;margin-bottom:4px"><input type="number" id="invpamt_${inv.id}" min="0.01" max="${_maxRemaining}" step="0.01" oninput="const v=parseFloat(this.value)||0;this.style.border=v>${_maxRemaining}?'2px solid var(--red)':'1px solid var(--border)'" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none" placeholder="Amount (max $${_maxRemaining.toLocaleString()})"/><input type="date" id="invpdate_${inv.id}" value="${localDateStr()}" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none"/></div><div style="display:flex;gap:4px;margin-bottom:5px"><button onclick="addPartialPayment('${inv.id}')" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;font-size:10px">+ Partial Pay</button><button onclick="markInvPaid('${inv.id}')" class="btn btn-green btn-xs" style="flex:1;justify-content:center;font-size:10px">✓ Full Pay</button></div></div>`;
       const _sc=(inv.lienSent||[]).map(s=>`<div style="display:flex;align-items:center;gap:4px;background:#F0FDF4;border:1px solid #86EFAC;border-radius:4px;padding:3px 7px;margin-bottom:1px"><span style="font-size:8px;color:#166534;font-weight:700">✉ Sent</span><span style="font-size:8px;color:#166534;flex:1">${s.type}</span><span style="font-size:8px;color:#166534;opacity:.7;white-space:nowrap">${fmtDate(s.date)}</span></div>`).join('');
       const lienCell=`<div style="display:flex;flex-direction:column;gap:3px">${_sc}<button class="btn btn-xs" style="background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 6px;white-space:nowrap" onclick="openLienEmail('${inv.id}','Unconditional Progress')">📧 Uncond. Progress</button><button class="btn btn-xs" style="background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 6px;white-space:nowrap" onclick="openLienEmail('${inv.id}','Unconditional Final')">📧 Uncond. Final</button>${(inv.lienFiles||[]).length?`<div style="display:flex;flex-direction:column;gap:2px;margin-top:2px">${(inv.lienFiles||[]).map(f=>`<div style="display:flex;align-items:center;gap:4px;background:var(--teal-l);border:1px solid #9FE0CB;border-radius:4px;padding:2px 6px;max-width:130px"><span style="font-size:10px">${fileIcon(f.name)}</span><span style="font-size:9px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span><button class="a-dl" style="background:var(--teal-l);color:var(--teal);border:1px solid #9FE0CB;font-size:9px;padding:1px 4px" onclick="dlFile('${f.id}')">⬇</button></div>`).join('')}</div>`:''}<button class="btn btn-xs" style="background:var(--teal-l);color:var(--teal);border:1px solid #9FE0CB;font-size:8px;padding:2px 6px" onclick="openModal('invlien','${inv.id}')">📎 ${(inv.lienFiles||[]).length?'+ Add Signed':'Upload Signed Waiver'}</button></div>`;
       return`<tr style="background:${bg}"><td style="padding:8px 10px"><div style="font-size:12px;font-weight:600;color:var(--navy)">${inv.invoiceNo||'—'}</div>${invMsName?`<div style="font-size:10px;color:var(--blue);margin-top:2px">📍 ${invMsName}</div>`:''}<div style="font-size:10px;color:var(--muted)">${inv.description||''}</div></td><td style="padding:8px 10px;font-size:10px;color:var(--muted);white-space:nowrap">${inv.invoiceDate?fmtDate(inv.invoiceDate):'—'}</td><td style="padding:8px 10px;font-size:10px;color:${inv.dueDate&&new Date(inv.dueDate+'T12:00:00')<new Date()&&!inv.paid?'var(--red)':'var(--muted)'};white-space:nowrap">${inv.dueDate?fmtDate(inv.dueDate):'—'}</td><td style="padding:8px 10px"><span style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;color:${inv.paid?'var(--green)':'var(--text)'}">${fmtMoney(inv.amount||0)}</span></td><td style="padding:6px 8px;min-width:150px">${paidCell}</td><td style="padding:6px 8px">${lienCell}</td><td style="padding:8px 10px;white-space:nowrap"><button class="btn btn-ghost btn-xs" style="font-size:9px;padding:2px 6px" onclick="nav('invoices')">View</button></td></tr>`;
@@ -3245,7 +3276,13 @@ function saveModal(){
     const vname=vdirEntry?(vdirEntry.company||vdirEntry.name):'';
     if(!vname){toast('⚠ Vendor name required');return;}
     const ex=mId?(p.vendors||[]).find(x=>x.id===mId):null;
-    const o={id:mId||uid(),vendor:vname,vdirId,vendorEmail:vVal('f-ven-email')||vdirEntry?.email||'',trade:vVal('f-ven-trade')||vdirEntry?.trade||'',contractNo:vVal('f-ven-no'),amount:parseFloat(vVal('f-ven-amt'))||0,contractType:vVal('f-ven-type'),status:vVal('f-ven-status'),startDate:vVal('f-ven-start'),endDate:vVal('f-ven-end'),scope:vVal('f-ven-scope'),exclusions:vVal('f-ven-exclusions'),notes:vVal('f-ven-notes'),milestones:_venMilestones.filter(ms=>!ms._deleted&&ms.name),files:ex?ex.files||[]:[],};
+    const base=normalizeVendorContract(ex, getVDirList());
+    const bank=String(vdirEntry?.bank||base.bankName||base.bank||'').trim();
+    const acctType=String(vdirEntry?.acctType||base.bankAcctType||base.acctType||'').trim();
+    const acct=String(vdirEntry?.acct||base.bankAccount||base.acct||'').trim();
+    const routing=String(vdirEntry?.routing||base.routingNo||base.routing||'').trim();
+    const zelle=String(vdirEntry?.zelle||base.zelleId||base.zelle||'').trim();
+    const o={...base,id:mId||uid(),vendor:vname,vdirId,vendorEmail:vVal('f-ven-email')||vdirEntry?.email||base.vendorEmail||'',trade:vVal('f-ven-trade')||vdirEntry?.trade||base.trade||'',address:String(vdirEntry?.address||base.address||'').trim(),license:String(vdirEntry?.license||base.license||'').trim(),bank,bankName:bank,acctType,bankAcctType:acctType,acct,bankAccount:acct,routing,routingNo:routing,zelle,zelleId:zelle,contractNo:vVal('f-ven-no'),amount:parseFloat(vVal('f-ven-amt'))||0,contractType:vVal('f-ven-type'),status:vVal('f-ven-status'),startDate:vVal('f-ven-start'),endDate:vVal('f-ven-end'),scope:vVal('f-ven-scope'),exclusions:vVal('f-ven-exclusions'),notes:vVal('f-ven-notes'),milestones:_venMilestones.filter(ms=>!ms._deleted&&ms.name),files:ex?ex.files||[]:[],};
     if(!p.vendors)p.vendors=[];
     if(mId){const i=p.vendors.findIndex(x=>x.id===mId);if(i>-1)p.vendors[i]=o;}else p.vendors.push(o);
   } else if(mMode==='venfiles'&&p){
@@ -6293,7 +6330,22 @@ function generateVendorContract(vid){
   toast('🖨 Contract opened — Print → Save as PDF');
 }
 
-function openLienEmail(invId, waiverType){
+function resolveLienWaiverPayment(inv, waiverType, partialPaymentId){
+  const partialPayments=Array.isArray(inv?.partialPayments)?inv.partialPayments:[];
+  const linkedPartial=partialPaymentId ? partialPayments.find(pp=>pp.id===partialPaymentId) : null;
+  const latestPartial=!linkedPartial && partialPayments.length ? partialPayments[partialPayments.length-1] : null;
+  const usePartial=(waiverType||'').startsWith('Conditional') ? (linkedPartial||latestPartial) : null;
+  const amountValue=usePartial ? Number(usePartial.amount||0) : Number(inv?.amount||0);
+  const dateValue=usePartial?.date || inv?.invoiceDate || '';
+  return {
+    partialPaymentId: usePartial?.id || '',
+    paymentAmount: Number.isFinite(amountValue) ? amountValue : 0,
+    paymentDate: dateValue,
+    isPartialPayment: !!usePartial
+  };
+}
+
+function openLienEmail(invId, waiverType, partialPaymentId){
   const p=proj(); if(!p)return;
   const inv=(p.invoices||[]).find(x=>x.id===invId); if(!inv)return;
   const q=(p.quotes||[]).find(x=>x.id===inv.quoteId);
@@ -6305,8 +6357,9 @@ function openLienEmail(invId, waiverType){
   const projName=p.name||'Project';
   const projAddr=p.address||'';
   const invNo=inv.invoiceNo||invId;
-  const invAmt=fmtMoney(inv.amount||0);
-  const invDate=inv.invoiceDate?fmtDate(inv.invoiceDate):'';
+  const resolvedPayment=resolveLienWaiverPayment(inv, waiverType, partialPaymentId);
+  const invAmt=fmtMoney(resolvedPayment.paymentAmount);
+  const invDate=resolvedPayment.paymentDate?fmtDate(resolvedPayment.paymentDate):'';
 
   const waiverDescriptions={
     'Conditional Progress':'Conditional Waiver and Release on Progress Payment',
@@ -6320,10 +6373,12 @@ function openLienEmail(invId, waiverType){
     ?'\n\nNote: This waiver is CONDITIONAL and becomes effective only upon receipt and clearance of the payment referenced herein.'
     :'\n\nNote: This waiver is UNCONDITIONAL. By signing, you waive all lien rights for the payment described above, regardless of whether payment has been received.';
 
-  const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nAddress: ${projAddr}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\nPayment Amount: ${invAmt}${conditionalNote}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\nLivio Building Systems`;
+  const paymentLabel=resolvedPayment.isPartialPayment?'Partial Payment Amount':'Payment Amount';
+  const body=`Dear ${vendorName},\n\nPlease find enclosed the ${waiverDesc} for the following:\n\nProject: ${projName}\nAddress: ${projAddr}\nInvoice #: ${invNo}\nInvoice Date: ${invDate}\n${paymentLabel}: ${invAmt}${conditionalNote}\n\nPlease sign and return this waiver at your earliest convenience.\n\nBest regards,\nLivio Building Systems`;
 
   vEl('lien-email-invid').value=invId;
   vEl('lien-email-type').value=waiverType;
+  vEl('mo-lien-email').dataset.partialPaymentId=partialPaymentId||resolvedPayment.partialPaymentId||'';
   vEl('lien-email-title').textContent=waiverType+' Lien Waiver';
   vEl('lien-email-to').value=vendorEmail;
   vEl('lien-email-subject').value=waiverDesc+' — '+projName+' / Inv #'+invNo;
@@ -6343,11 +6398,12 @@ function closeLienEmail(){vEl('mo-lien-email').classList.remove('open');}
 function _saveLienSent(to){
   const invId=vEl('lien-email-invid')?.value;
   const waiverType=vEl('lien-email-type')?.value;
+  const partialPaymentId=vEl('mo-lien-email')?.dataset?.partialPaymentId||'';
   if(!invId||!waiverType) return;
   const p=proj(); if(!p) return;
   const inv=(p.invoices||[]).find(x=>x.id===invId); if(!inv) return;
   if(!inv.lienSent) inv.lienSent=[];
-  inv.lienSent.push({id:uid(),type:waiverType,date:localDateStr(),sentTo:to});
+  inv.lienSent.push({id:uid(),type:waiverType,date:localDateStr(),sentTo:to,partialPaymentId});
   saveDB(); renderPayments();
 }
 function sendLienEmail(){

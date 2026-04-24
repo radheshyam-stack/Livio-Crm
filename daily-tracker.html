@@ -627,6 +627,8 @@ const CL={
     {id:"fw10",text:"Pre-pour checklist signed off by site engineer",pts:10},
   ]}
 };
+Object.keys(CL).forEach(key => delete CL[key]);
+const getChecklistGroups = () => Object.entries(CL).filter(([,section]) => Array.isArray(section?.items) && section.items.length);
 
 // ── DISCUSSION SEED DATA ──
 const DISC_SEED = [
@@ -664,10 +666,19 @@ const DISC_SEED = [
 
 // ── STATE ──
 const DT_STATE_KEY = 'dt_state';
+const DT_PROJECT_STATE_KEY = 'dt_project_state_map';
 const cloneData = (value, fallback) => {
   if (value == null) return fallback;
   try { return JSON.parse(JSON.stringify(value)); } catch { return fallback; }
 };
+const createEmptyTrackerState = () => ({
+  days: [],
+  discItems: cloneData(DISC_SEED, []),
+  clients: [],
+  curDay: null,
+  curDiscId: null,
+  curClient: null,
+});
 function getHostApp(){
   try{
     if(window.parent && window.parent !== window && window.parent.DB && typeof window.parent.saveDB === 'function'){
@@ -704,6 +715,25 @@ function readFallbackState(){
     curClient: meta.curClient ?? null,
   };
 }
+function readProjectStateMap(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(DT_PROJECT_STATE_KEY) || '{}');
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  }catch{}
+  return {};
+}
+function readProjectScopedFallback(projectId){
+  if(!projectId) return null;
+  const map = readProjectStateMap();
+  const state = map[projectId];
+  return state && typeof state === 'object' ? state : null;
+}
+function writeProjectScopedFallback(projectId, state){
+  if(!projectId) return;
+  const map = readProjectStateMap();
+  map[projectId] = cloneData(state, createEmptyTrackerState());
+  localStorage.setItem(DT_PROJECT_STATE_KEY, JSON.stringify(map));
+}
 function buildTrackerState(){
   return {
     days: cloneData(days, []),
@@ -736,7 +766,15 @@ function writeFallbackState(state){
 function readTrackerState(){
   const project = getHostProject();
   if(project){
-    return project.dailyTracker || {};
+    const projectState = project.dailyTracker;
+    if(projectState && typeof projectState === 'object' && !Array.isArray(projectState)){
+      return projectState;
+    }
+    const scopedFallback = readProjectScopedFallback(project.id);
+    if(scopedFallback){
+      return scopedFallback;
+    }
+    return createEmptyTrackerState();
   }
   return readFallbackState();
 }
@@ -745,6 +783,7 @@ function saveTrackerState(){
   const host = getHostApp();
   const project = getHostProject(host);
   if(project){
+    writeProjectScopedFallback(project.id, state);
     project.dailyTracker = cloneData(state, {});
     try{
       host.saveDB();
@@ -796,7 +835,7 @@ function handleTopAdd(){
 // ── SCORE ──
 function sc(day){
   let e=0,t=0,c=0,ti=0;
-  Object.keys(CL).forEach(k=>{CL[k].items.forEach(i=>{ti++;t+=i.pts;if(day.checks?.[i.id]==='checked'){e+=i.pts;c++}})});
+  getChecklistGroups().forEach(([,section])=>{section.items.forEach(i=>{ti++;t+=i.pts;if(day.checks?.[i.id]==='checked'){e+=i.pts;c++}})});
   return{e,t,c,ti};
 }
 
@@ -806,7 +845,7 @@ function renderSidebar(f=''){
   const fd = days.slice().reverse().filter(d=>!f||d.date.includes(f)||(d.location||'').toLowerCase().includes(f.toLowerCase())||(d.inspector||'').toLowerCase().includes(f.toLowerCase()));
   if(!fd.length){list.innerHTML=`<div style="padding:20px;text-align:center;font-size:11px;color:var(--text3)">${days.length?'No matches':'No days yet'}</div>`;return}
   list.innerHTML = fd.map(day=>{
-    const s=sc(day),pct=Math.round((s.c/s.ti)*100);
+    const s=sc(day),pct=s.ti?Math.round((s.c/s.ti)*100):0;
     const fc=pct===100?'var(--lime)':pct>0?'var(--amber)':'var(--text3)';
     const d=new Date(day.date+'T12:00:00');
     return `<div class="day-item${day.id===curDay?' active':''}" onclick="selectDay('${day.id}')">
@@ -853,7 +892,7 @@ function renderMain(){
     return;
   }
   const day=getDay(curDay); if(!day)return;
-  const s=sc(day),pct=Math.round((s.c/s.ti)*100);
+  const s=sc(day),pct=s.ti?Math.round((s.c/s.ti)*100):0;
   const d=new Date(day.date+'T12:00:00');
   const ds=d.toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   const nas=Object.values(day.checks||{}).filter(v=>v==='na').length;
@@ -877,7 +916,7 @@ function renderMain(){
   </div>
   <div class="sum-row">
     <div class="s-card"><div class="s-ico g">✅</div><div><div class="s-val g">${s.c}</div><div class="s-lbl">Checked</div></div></div>
-    <div class="s-card"><div class="s-ico o">⏳</div><div><div class="s-val o">${s.ti-s.c-nas}</div><div class="s-lbl">Remaining</div></div></div>
+    <div class="s-card"><div class="s-ico o">⏳</div><div><div class="s-val o">${Math.max(s.ti-s.c-nas,0)}</div><div class="s-lbl">Remaining</div></div></div>
     <div class="s-card"><div class="s-ico a">⚠️</div><div><div class="s-val a">${nas}</div><div class="s-lbl">N/A Items</div></div></div>
     <div class="s-card"><div class="s-ico b">📷</div><div><div class="s-val b">${(day.media||[]).length}</div><div class="s-lbl">Media</div></div></div>
   </div>
@@ -1012,8 +1051,17 @@ function setDiscFilter(f){discFilter=f;renderDiscMain()}
 
 // ── CHECKLIST BUILDERS ──
 function buildCL(day){
-  return Object.keys(CL).map(k=>{
-    const cl=CL[k],tot=cl.items.length;
+  const groups=getChecklistGroups();
+  if(!groups.length){
+    return `<div class="cl-section">
+      <div style="padding:28px 24px;text-align:center">
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">No prefilled checklist</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.7;max-width:520px;margin:0 auto">The default Daily Tracker checklist has been removed. Each project now starts with a blank checklist area.</div>
+      </div>
+    </div>`;
+  }
+  return groups.map(([k,cl])=>{
+    const tot=cl.items.length;
     const chk=cl.items.filter(i=>day.checks?.[i.id]==='checked').length;
     const pct=Math.round((chk/tot)*100);
     const items=cl.items.map(item=>{
@@ -1091,7 +1139,7 @@ function setMediaFilter(cat){const day=getDay(curDay);if(!day)return;day._mediaC
 
 function buildHI(){
   const rows=days.slice().reverse().map(day=>{
-    const s=sc(day),pct=Math.round((s.c/s.ti)*100);
+    const s=sc(day),pct=s.ti?Math.round((s.c/s.ti)*100):0;
     const status=pct===100?'done':pct>0?'partial':'pending',label=pct===100?'Complete':pct>0?'In Progress':'Pending';
     const d=new Date(day.date+'T12:00:00');
     const fc=pct===100?'var(--lime)':pct>0?'var(--amber)':'var(--text3)';

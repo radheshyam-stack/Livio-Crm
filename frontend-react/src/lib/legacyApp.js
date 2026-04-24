@@ -422,6 +422,37 @@ function saveDB(){
   }
   registerAllFiles();
 }
+
+function normalizeVendorContract(entry, vendorDirectory=[]){
+  const raw=(entry&&typeof entry==='object')?entry:{};
+  const vdir=(vendorDirectory||[]).find(v=>v.id===raw.vdirId)||null;
+  const bank=String(raw.bank||raw.bankName||vdir?.bank||'').trim();
+  const acctType=String(raw.acctType||raw.bankAcctType||vdir?.acctType||'').trim();
+  const acct=String(raw.acct||raw.bankAccount||vdir?.acct||'').trim();
+  const routing=String(raw.routing||raw.routingNo||vdir?.routing||'').trim();
+  const zelle=String(raw.zelle||raw.zelleId||vdir?.zelle||'').trim();
+
+  return {
+    ...raw,
+    vendor: String(raw.vendor||vdir?.company||vdir?.name||'').trim(),
+    vendorEmail: String(raw.vendorEmail||vdir?.email||'').trim(),
+    trade: String(raw.trade||vdir?.trade||'').trim(),
+    address: String(raw.address||vdir?.address||'').trim(),
+    license: String(raw.license||vdir?.license||'').trim(),
+    bank,
+    bankName: bank,
+    acctType,
+    bankAcctType: acctType,
+    acct,
+    bankAccount: acct,
+    routing,
+    routingNo: routing,
+    zelle,
+    zelleId: zelle,
+    files: Array.isArray(raw.files)?raw.files:[],
+    milestones: Array.isArray(raw.milestones)?raw.milestones:[]
+  };
+}
 function registerAllFiles(){
   (DB.projects||[]).forEach(p=>{
     (p.plans||[]).forEach(f=>regFiles([f]));
@@ -452,7 +483,16 @@ function registerAllFiles(){
 let DB = loadDB();
 registerAllFiles();
 const proj = () => DB.projects.find(p=>p.id===DB.activeId)||DB.projects[0]||null;
-const setProj = id => { DB.activeId=id; saveDB(); };
+function syncEmbeddedProjectFrames(force=true){
+  try{ document.getElementById('daily-tracker-frame')?.contentWindow?.syncActiveProject?.(force); }catch{}
+  try{ document.getElementById('client-contract-frame')?.contentWindow?.syncActiveProject?.(force); }catch{}
+  try{ document.getElementById('client-invoice-frame')?.contentWindow?.syncActiveProject?.(force); }catch{}
+}
+const setProj = id => {
+  DB.activeId=id;
+  saveDB();
+  syncEmbeddedProjectFrames(true);
+};
 
 function regFiles(arr){ (arr||[]).forEach(f=>{ if(f&&f.id&&(f.data||f.path)) FA[f.id]=f; }); }
 
@@ -1152,7 +1192,7 @@ function renderPayments(){
       const invMsName=vcSource?(vcSource.milestones||[]).find(m=>m.id===inv.milestoneId)?.name||'':'';
       const payHistoryHTML=partials.length?partials.map(pp=>{const ppFiles=pp.files||[];return`<div style="background:#FAFFFE;border:1px solid var(--border);border-radius:5px;padding:6px 8px;margin-bottom:5px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><span style="color:var(--green);font-weight:700;font-size:11px">✓ $${Number(pp.amount||0).toLocaleString()}</span><span style="color:var(--muted);font-size:9px">${fmtDate(pp.date)||''}</span>${!inv.paid?`<button onclick="removePartialPayment('${inv.id}','${pp.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px" title="Remove">×</button>`:''}</div><div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--muted);white-space:nowrap;flex-shrink:0">🔖 Txn #:</span><input type="text" value="${pp.txnNo||''}" placeholder="Transaction / Reference #" onchange="updatePartialTxn('${inv.id}','${pp.id}',this.value)" style="flex:1;font-size:9px;border:1px solid var(--border);border-radius:3px;padding:2px 5px;background:#fff;outline:none"/></div><div style="display:flex;gap:4px;margin-bottom:5px"><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px;justify-content:center" onclick="openLienEmail('${inv.id}','Conditional Progress','${pp.id}')">📧 Cond. Progress</button><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px;justify-content:center" onclick="openLienEmail('${inv.id}','Conditional Final','${pp.id}')">📧 Cond. Final</button></div>${ppFiles.length?`<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px">${ppFiles.map(f=>`<div style="display:flex;align-items:center;gap:2px;background:var(--blue-l);border:1px solid #B0D0F0;border-radius:3px;padding:2px 5px;max-width:120px"><span style="font-size:9px">${fileIcon(f.name)}</span><span style="font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${f.name}</span><button class="a-dl" onclick="dlFile('${f.id}')" style="font-size:8px;padding:0 3px;background:var(--blue-l);color:var(--blue);border:1px solid #B0D0F0">⬇</button></div>`).join('')}</div>`:''}${!inv.paid?`<button onclick="openModal('ppfiles','${inv.id}|${pp.id}')" class="btn btn-ghost btn-xs" style="font-size:9px;padding:2px 5px;width:100%">📎 ${ppFiles.length?ppFiles.length+' file(s) · + Add':'Attach Supporting File'}</button>`:''}</div>`}).join(''):'';
       const _maxRemaining=remaining>0?remaining:0;
-      const paidCell=inv.paid?`<div style="background:var(--green-l);border:1px solid #B8DCA0;border-radius:6px;padding:7px 9px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:700;color:var(--green)">✓ Fully Paid</span><button onclick="unmarkInv('${inv.id}')" style="font-size:9px;background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;padding:0">Undo</button></div>${payHistoryHTML}<div style="font-size:10px;font-weight:700;color:var(--green);margin-top:4px;padding-top:4px;border-top:1px solid #B8DCA0">Total: $${Number(inv.amount||0).toLocaleString()}</div></div>`:`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px">${invMsName?`<div style="font-size:9px;font-weight:700;color:var(--blue);background:var(--blue-l);border:1px solid #B0D0F0;border-radius:4px;padding:3px 8px;margin-bottom:6px">📍 Milestone: ${invMsName}</div>`:''}<div style="font-size:9px;color:var(--muted);margin-bottom:5px">Invoice: <strong style="color:var(--text)">$${Number(inv.amount||0).toLocaleString()}</strong> · Max payable: <strong style="color:${_maxRemaining>0?'var(--amber)':'var(--green)'}">$${_maxRemaining.toLocaleString()}</strong></div>${payHistoryHTML}${remaining<Number(inv.amount||0)?`<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid var(--border)">Remaining: $${remaining.toLocaleString()}</div>`:''}<div style="display:flex;gap:4px;margin-bottom:4px"><input type="number" id="invpamt_${inv.id}" min="0.01" max="${_maxRemaining}" step="0.01" oninput="const v=parseFloat(this.value)||0;this.style.border=v>${_maxRemaining}?'2px solid var(--red)':'1px solid var(--border)'" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none" placeholder="Amount (max $${_maxRemaining.toLocaleString()})"/><input type="date" id="invpdate_${inv.id}" value="${localDateStr()}" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none"/></div><div style="display:flex;gap:4px;margin-bottom:5px"><button onclick="addPartialPayment('${inv.id}')" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;font-size:10px">+ Partial Pay</button><button onclick="markInvPaid('${inv.id}')" class="btn btn-green btn-xs" style="flex:1;justify-content:center;font-size:10px">✓ Full Pay</button></div><div style="border-top:1px solid var(--border);padding-top:5px;display:flex;gap:4px"><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px" onclick="openLienEmail('${inv.id}','Conditional Progress')">📧 Cond. Progress</button><button class="btn btn-xs" style="flex:1;background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 4px" onclick="openLienEmail('${inv.id}','Conditional Final')">📧 Cond. Final</button></div></div>`;
+const paidCell=inv.paid?`<div style="background:var(--green-l);border:1px solid #B8DCA0;border-radius:6px;padding:7px 9px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><span style="font-size:11px;font-weight:700;color:var(--green)">✓ Fully Paid</span><button onclick="unmarkInv('${inv.id}')" style="font-size:9px;background:none;border:none;color:var(--muted);cursor:pointer;text-decoration:underline;padding:0">Undo</button></div>${payHistoryHTML}<div style="font-size:10px;font-weight:700;color:var(--green);margin-top:4px;padding-top:4px;border-top:1px solid #B8DCA0">Total: $${Number(inv.amount||0).toLocaleString()}</div></div>`:`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px">${invMsName?`<div style="font-size:9px;font-weight:700;color:var(--blue);background:var(--blue-l);border:1px solid #B0D0F0;border-radius:4px;padding:3px 8px;margin-bottom:6px">📍 Milestone: ${invMsName}</div>`:''}<div style="font-size:9px;color:var(--muted);margin-bottom:5px">Invoice: <strong style="color:var(--text)">$${Number(inv.amount||0).toLocaleString()}</strong> · Max payable: <strong style="color:${_maxRemaining>0?'var(--amber)':'var(--green)'}">$${_maxRemaining.toLocaleString()}</strong></div>${payHistoryHTML}${remaining<Number(inv.amount||0)?`<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid var(--border)">Remaining: $${remaining.toLocaleString()}</div>`:''}<div style="display:flex;gap:4px;margin-bottom:4px"><input type="number" id="invpamt_${inv.id}" min="0.01" max="${_maxRemaining}" step="0.01" oninput="const v=parseFloat(this.value)||0;this.style.border=v>${_maxRemaining}?'2px solid var(--red)':'1px solid var(--border)'" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none" placeholder="Amount (max $${_maxRemaining.toLocaleString()})"/><input type="date" id="invpdate_${inv.id}" value="${localDateStr()}" style="flex:1;font-size:10px;border:1px solid var(--border);border-radius:4px;padding:3px 6px;background:#fff;outline:none"/></div><div style="display:flex;gap:4px;margin-bottom:5px"><button onclick="addPartialPayment('${inv.id}')" class="btn btn-ghost btn-xs" style="flex:1;justify-content:center;font-size:10px">+ Partial Pay</button><button onclick="markInvPaid('${inv.id}')" class="btn btn-green btn-xs" style="flex:1;justify-content:center;font-size:10px">✓ Full Pay</button></div></div>`;
       const _sc=(inv.lienSent||[]).map(s=>`<div style="display:flex;align-items:center;gap:4px;background:#F0FDF4;border:1px solid #86EFAC;border-radius:4px;padding:3px 7px;margin-bottom:1px"><span style="font-size:8px;color:#166534;font-weight:700">✉ Sent</span><span style="font-size:8px;color:#166534;flex:1">${s.type}</span><span style="font-size:8px;color:#166534;opacity:.7;white-space:nowrap">${fmtDate(s.date)}</span></div>`).join('');
       const lienCell=`<div style="display:flex;flex-direction:column;gap:3px">${_sc}<button class="btn btn-xs" style="background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 6px;white-space:nowrap" onclick="openLienEmail('${inv.id}','Unconditional Progress')">📧 Uncond. Progress</button><button class="btn btn-xs" style="background:#EFF6FF;color:#1A6BC4;border:1px solid #BFDBFE;font-size:8px;padding:3px 6px;white-space:nowrap" onclick="openLienEmail('${inv.id}','Unconditional Final')">📧 Uncond. Final</button>${(inv.lienFiles||[]).length?`<div style="display:flex;flex-direction:column;gap:2px;margin-top:2px">${(inv.lienFiles||[]).map(f=>`<div style="display:flex;align-items:center;gap:4px;background:var(--teal-l);border:1px solid #9FE0CB;border-radius:4px;padding:2px 6px;max-width:170px"><span style="font-size:10px">${fileIcon(f.name)}</span><span style="font-size:9px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span><button class="a-dl" style="background:var(--teal-l);color:var(--teal);border:1px solid #9FE0CB;font-size:8px;padding:1px 4px;flex-shrink:0" onclick="viewFile('${f.id}')">View</button><button class="a-dl" style="background:var(--teal-l);color:var(--teal);border:1px solid #9FE0CB;font-size:9px;padding:1px 4px;flex-shrink:0" onclick="dlFile('${f.id}')">⬇</button></div>`).join('')}</div>`:''}<button class="btn btn-xs" style="background:var(--teal-l);color:var(--teal);border:1px solid #9FE0CB;font-size:8px;padding:2px 6px" onclick="openModal('invlien','${inv.id}')">📎 ${(inv.lienFiles||[]).length?'+ Add Signed':'Upload Signed Waiver'}</button></div>`;
       return`<tr style="background:${bg}"><td style="padding:8px 10px"><div style="font-size:12px;font-weight:600;color:var(--navy)">${inv.invoiceNo||'—'}</div>${invMsName?`<div style="font-size:10px;color:var(--blue);margin-top:2px">📍 ${invMsName}</div>`:''}<div style="font-size:10px;color:var(--muted)">${inv.description||''}</div></td><td style="padding:8px 10px;font-size:10px;color:var(--muted);white-space:nowrap">${inv.invoiceDate?fmtDate(inv.invoiceDate):'—'}</td><td style="padding:8px 10px;font-size:10px;color:${inv.dueDate&&new Date(inv.dueDate+'T12:00:00')<new Date()&&!inv.paid?'var(--red)':'var(--muted)'};white-space:nowrap">${inv.dueDate?fmtDate(inv.dueDate):'—'}</td><td style="padding:8px 10px"><span style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;color:${inv.paid?'var(--green)':'var(--text)'}">${fmtMoney(inv.amount||0)}</span></td><td style="padding:6px 8px;min-width:150px">${paidCell}</td><td style="padding:6px 8px">${lienCell}</td><td style="padding:8px 10px;white-space:nowrap"><button class="btn btn-ghost btn-xs" style="font-size:9px;padding:2px 6px" onclick="nav('invoices')">View</button></td></tr>`;
@@ -2394,7 +2434,43 @@ function saveModal(){
     const vname=vdirEntry?(vdirEntry.company||vdirEntry.name):'';
     if(!vname){toast('⚠ Vendor name required');return;}
     const ex=mId?(p.vendors||[]).find(x=>x.id===mId):null;
-    const o={id:mId||uid(),vendor:vname,vdirId,vendorEmail:vVal('f-ven-email')||vdirEntry?.email||'',trade:vVal('f-ven-trade')||vdirEntry?.trade||'',contractNo:vVal('f-ven-no'),amount:parseFloat(vVal('f-ven-amt'))||0,contractType:vVal('f-ven-type'),status:vVal('f-ven-status'),startDate:vVal('f-ven-start'),endDate:vVal('f-ven-end'),scope:vVal('f-ven-scope'),exclusions:vVal('f-ven-exclusions'),notes:vVal('f-ven-notes'),milestones:_venMilestones.filter(ms=>!ms._deleted&&ms.name),files:ex?ex.files||[]:[],};
+    const base=normalizeVendorContract(ex, getVDirList());
+    const bank=String(vdirEntry?.bank||base.bankName||base.bank||'').trim();
+    const acctType=String(vdirEntry?.acctType||base.bankAcctType||base.acctType||'').trim();
+    const acct=String(vdirEntry?.acct||base.bankAccount||base.acct||'').trim();
+    const routing=String(vdirEntry?.routing||base.routingNo||base.routing||'').trim();
+    const zelle=String(vdirEntry?.zelle||base.zelleId||base.zelle||'').trim();
+    const o={
+      ...base,
+      id:mId||uid(),
+      vendor:vname,
+      vdirId,
+      vendorEmail:vVal('f-ven-email')||vdirEntry?.email||base.vendorEmail||'',
+      trade:vVal('f-ven-trade')||vdirEntry?.trade||base.trade||'',
+      address:String(vdirEntry?.address||base.address||'').trim(),
+      license:String(vdirEntry?.license||base.license||'').trim(),
+      bank,
+      bankName:bank,
+      acctType,
+      bankAcctType:acctType,
+      acct,
+      bankAccount:acct,
+      routing,
+      routingNo:routing,
+      zelle,
+      zelleId:zelle,
+      contractNo:vVal('f-ven-no'),
+      amount:parseFloat(vVal('f-ven-amt'))||0,
+      contractType:vVal('f-ven-type'),
+      status:vVal('f-ven-status'),
+      startDate:vVal('f-ven-start'),
+      endDate:vVal('f-ven-end'),
+      scope:vVal('f-ven-scope'),
+      exclusions:vVal('f-ven-exclusions'),
+      notes:vVal('f-ven-notes'),
+      milestones:_venMilestones.filter(ms=>!ms._deleted&&ms.name),
+      files:ex?ex.files||[]:[]
+    };
     if(!p.vendors)p.vendors=[];
     if(mId){const i=p.vendors.findIndex(x=>x.id===mId);if(i>-1)p.vendors[i]=o;}else p.vendors.push(o);
   } else if(mMode==='venfiles'&&p){
@@ -4005,7 +4081,12 @@ function getUploadProjectId(){
 }
 function getFileUrl(file){
   if(!file) return '';
-  if(file.path) return getBackendBase()+file.path;
+  if(file.path){
+    const normalizedPath=file.path.startsWith('/uploads/')
+      ? file.path.replace('/uploads/','/api/files/')
+      : file.path;
+    return getBackendBase()+normalizedPath;
+  }
   return file.data||'';
 }
 async function fetchFileBlob(file){
@@ -4038,6 +4119,19 @@ let syncTimer=null;
 let syncInFlight=false;
 let hydrateStarted=false;
 let hasLocalChanges=false;
+let saveRevision=0;
+let syncRequestedWhileInFlight=false;
+function normalizeSharedUser(user, index=0){
+  const raw=(user&&typeof user==='object')?user:{};
+  return {
+    ...raw,
+    id: String(raw.id||('u_'+index+'_'+Math.random().toString(36).slice(2,8))).trim(),
+    username: String(raw.username||raw.user||'').trim(),
+    password: String(raw.password||'').trim(),
+    role: String(raw.role||'Manager').trim()||'Manager',
+    email: String(raw.email||'').trim()
+  };
+}
 function normalizeDBShape(input){
   const raw=(input&&typeof input==='object')?input:{};
   const hasProjectsField=Array.isArray(raw.projects);
@@ -4049,6 +4143,10 @@ function normalizeDBShape(input){
     ...raw,
     projects:fallbackProjects,
     vendorDirectory:Array.isArray(raw.vendorDirectory)?raw.vendorDirectory.map((v,i)=>normalizeVDirEntry(v,i)):[],
+    users:Array.isArray(raw.users)?raw.users.map((user,i)=>normalizeSharedUser(user,i)).filter(user=>user.username):[],
+    roles:Array.isArray(raw.roles)?raw.roles.map(role=>String(role||'').trim()).filter(Boolean):[],
+    perms:(raw.perms&&typeof raw.perms==='object'&&!Array.isArray(raw.perms))?raw.perms:{},
+    passwordResets:(raw.passwordResets&&typeof raw.passwordResets==='object'&&!Array.isArray(raw.passwordResets))?raw.passwordResets:{},
     activeId,
     activeProjectId:activeId
   };
@@ -4078,7 +4176,7 @@ function normalizeDBShape(input){
       });
     });
     p.inspections.forEach(i=>{if(!i.files)i.files=[];});
-    if(!p.invoices)p.invoices=[]; if(!p.vendors)p.vendors=[]; if(!p.checklist)p.checklist=[]; if(!p.qaqcLog)p.qaqcLog=[]; if(!p.chkCategories)p.chkCategories=[]; (p.checklist||[]).forEach(it=>{(it.comments||[]).forEach(c=>regFiles(c.files||[]));}); (p.qaqcLog||[]).forEach(it=>regFiles(it.files||[])); (p.checklist||[]).forEach(it=>{if(!it.comments)it.comments=[];}); p.vendors.forEach(v=>regFiles(v.files||[]));
+    if(!p.invoices)p.invoices=[]; if(!p.vendors)p.vendors=[]; if(!p.checklist)p.checklist=[]; if(!p.qaqcLog)p.qaqcLog=[]; if(!p.chkCategories)p.chkCategories=[]; (p.checklist||[]).forEach(it=>{(it.comments||[]).forEach(c=>regFiles(c.files||[]));}); (p.qaqcLog||[]).forEach(it=>regFiles(it.files||[])); (p.checklist||[]).forEach(it=>{if(!it.comments)it.comments=[];}); p.vendors=(p.vendors||[]).map(v=>normalizeVendorContract(v, db.vendorDirectory||[])); p.vendors.forEach(v=>regFiles(v.files||[]));
     p.invoices.forEach(inv=>{
       if(!inv.files)inv.files=[];
       if(!inv.proofFiles)inv.proofFiles=[];
@@ -4122,8 +4220,13 @@ function persistDBLocal(){
   }));
 }
 async function syncRemoteDB(){
-  if(syncInFlight) return;
+  if(syncInFlight){
+    syncRequestedWhileInFlight=true;
+    return;
+  }
   syncInFlight=true;
+  syncRequestedWhileInFlight=false;
+  const revisionAtStart=saveRevision;
   try{
     const res=await fetch(getApiBase()+'/projects/sync',{
       method:'POST',
@@ -4138,11 +4241,12 @@ async function syncRemoteDB(){
       }catch(e){}
       throw new Error(msg);
     }
-    hasLocalChanges=false;
+    if(saveRevision===revisionAtStart) hasLocalChanges=false;
   }catch(e){
     console.warn('Remote sync failed:',e?.message||e);
   }finally{
     syncInFlight=false;
+    if(syncRequestedWhileInFlight||saveRevision>revisionAtStart) queueRemoteSync(50);
   }
 }
 function queueRemoteSync(delay=150){
@@ -4179,6 +4283,7 @@ saveDB=function(){
     DB.activeProjectId=DB.activeId??DB.activeProjectId??null;
     persistDBLocal();
     hasLocalChanges=true;
+    saveRevision+=1;
   }catch(e){
     const msg=e.name==='QuotaExceededError'||e.code===22
       ?'âš  Browser storage full â€” files are too large for local storage. Export your project to save data.'
@@ -4369,6 +4474,7 @@ async function sendAppEmail(payload){
   };
   body.replyTo=payload.replyTo||getEmailReplyTo();
   if(Array.isArray(payload.attachments)&&payload.attachments.length) body.attachments=payload.attachments;
+  if(payload.generatedPdf) body.generatedPdf=payload.generatedPdf;
   const res=await fetch(apiBase+'/email/send',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
@@ -4938,6 +5044,135 @@ function _buildLedgerText(type, ref, p){
   return lines.join('\n');
 }
 
+function buildLedgerEmailBody(type, ref, p, toName){
+  let body=_buildLedgerText(type,ref,p);
+  body=body.replace(/(?:Project\s+)?Address\s*:\s*[^\n]*/i,`Project Address : ${getProjectAddressLine(p)}\nLivio Address   : ${LIVIO_OFFICE_ADDRESS}`);
+  const greeting='Dear '+toName+',\n\nPlease find attached the current payment ledger in PDF format for your reference.\n\nFor convenience, the ledger details are also included below.\n\n';
+  const closing='\n\nReply Email: '+LIVIO_REPLY_EMAIL+'\n\nPlease review and contact us if you have any questions.\n\nBest regards,\n'+getLivioEmailSignature();
+  return greeting+body+closing;
+}
+
+function sanitizeLedgerPdfText(text){
+  return String(text||'')
+    .replace(/—/g,'-')
+    .replace(/–/g,'-')
+    .replace(/•/g,'*')
+    .replace(/·/g,'-')
+    .replace(/✓/g,'[Paid]')
+    .replace(/📍/g,'Milestone')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g,'');
+}
+
+function getLedgerPdfFilename(type, ref, p){
+  let label=ref||'ledger';
+  if(type==='vendor'){
+    label=((p.vendors||[]).find(x=>x.id===ref)?.vendor)||label;
+  }else if(type==='quote'){
+    label=((p.quotes||[]).find(x=>x.id===ref)?.vendor)||label;
+  }
+  const safeLabel=String(label||'ledger').replace(/[^a-z0-9-_]+/gi,'_');
+  const safeProject=String(p?.name||'Project').replace(/[^a-z0-9-_]+/gi,'_');
+  const safeType=String(type||'ledger').replace(/[^a-z0-9-_]+/gi,'_');
+  return `${safeLabel}-${safeProject}-${safeType}-ledger.pdf`;
+}
+
+let jsPdfLoadPromise=null;
+function ensureJsPdfLoaded(){
+  if(window.jspdf&&window.jspdf.jsPDF) return Promise.resolve();
+  if(jsPdfLoadPromise) return jsPdfLoadPromise;
+  jsPdfLoadPromise=new Promise((resolve,reject)=>{
+    const existing=document.querySelector('script[data-livio-jspdf="true"]');
+    if(existing){
+      existing.addEventListener('load',()=>resolve(),{once:true});
+      existing.addEventListener('error',()=>reject(new Error('Could not load PDF library.')),{once:true});
+      return;
+    }
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.async=true;
+    s.dataset.livioJspdf='true';
+    s.onload=()=>resolve();
+    s.onerror=()=>reject(new Error('Could not load PDF library.'));
+    document.head.appendChild(s);
+  }).finally(()=>{ jsPdfLoadPromise=null; });
+  return jsPdfLoadPromise;
+}
+
+async function buildLedgerPdfAttachment(type, ref){
+  const p=proj(); if(!p) throw new Error('No active project selected.');
+  const ledgerText=sanitizeLedgerPdfText(_buildLedgerText(type,ref,p));
+  if(!ledgerText.trim()) throw new Error('Ledger data not found.');
+  if(!window.jspdf||!window.jspdf.jsPDF) throw new Error('PDF library not loaded yet. Try again.');
+
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'letter'});
+  const pageW=doc.internal.pageSize.getWidth();
+  const pageH=doc.internal.pageSize.getHeight();
+  const left=40;
+  const right=40;
+  const top=44;
+  const bottom=40;
+  const maxWidth=pageW-left-right;
+  const lineHeight=12;
+  let y=top;
+
+  const ensureSpace=(needed=lineHeight)=>{
+    if(y+needed>pageH-bottom){
+      doc.addPage();
+      y=top;
+    }
+  };
+
+  doc.setProperties({
+    title:getLedgerPdfFilename(type,ref,p),
+    subject:'Payment Ledger',
+    author:LIVIO_COMPANY_NAME,
+    creator:LIVIO_COMPANY_NAME
+  });
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(16);
+  doc.text('Payment Ledger',left,y);
+  y+=20;
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  [
+    p.name||'Project',
+    'Project Address: '+getProjectAddressLine(p),
+    'Livio Address: '+LIVIO_OFFICE_ADDRESS,
+    'Generated: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})
+  ].forEach(line=>{
+    ensureSpace();
+    doc.text(sanitizeLedgerPdfText(line),left,y);
+    y+=lineHeight;
+  });
+  y+=8;
+
+  doc.setFont('courier','normal');
+  doc.setFontSize(9);
+  ledgerText.split('\n').forEach(rawLine=>{
+    const line=rawLine||'';
+    if(!line){
+      ensureSpace();
+      y+=lineHeight;
+      return;
+    }
+    const wrapped=doc.splitTextToSize(line,maxWidth);
+    ensureSpace(wrapped.length*lineHeight);
+    doc.text(wrapped,left,y);
+    y+=wrapped.length*lineHeight;
+  });
+
+  const arrayBuffer=doc.output('arraybuffer');
+  const content=arrayBufferToBase64Content(arrayBuffer);
+  return {
+    filename:getLedgerPdfFilename(type,ref,p),
+    content,
+    contentType:'application/pdf'
+  };
+}
+
 function openLedgerEmail(type, ref){
   const p=proj(); if(!p) return;
   let toEmail='',toName='',subject='';
@@ -4970,16 +5205,14 @@ function openLedgerEmail(type, ref){
     vEl('ledger-email-title').textContent='📧 Email Trade Ledger — '+ref;
   }
 
-  const body=_buildLedgerText(type,ref,p);
-  const greeting='Dear '+toName+',\n\nPlease find below the current payment ledger for your reference.\n\n';
-  const closing='\n\nPlease review and contact us if you have any questions.\n\nBest regards,\nLivio Building Systems';
+  const body=buildLedgerEmailBody(type,ref,p,toName);
 
   vEl('ledger-email-type').value=type;
   vEl('ledger-email-ref').value=ref;
   vEl('ledger-email-to').value=toEmail;
   vEl('ledger-email-cc').value='';
   vEl('ledger-email-subject').value=subject;
-  vEl('ledger-email-body').value=greeting+body+closing;
+  vEl('ledger-email-body').value=body;
 
   const st=vEl('ledger-email-status');
   if(st) st.innerHTML=getEmailStatusMarkup(getEmailConfig());
@@ -4993,15 +5226,28 @@ function copyLedgerToClipboard(){
   navigator.clipboard?.writeText(txt).then(()=>toast('📋 Ledger copied to clipboard')).catch(()=>toast('⚠ Copy failed'));
 }
 
-function sendLedgerEmail(){
+async function sendLedgerEmail(){
   const to=vEl('ledger-email-to').value.trim();
   const cc=vEl('ledger-email-cc').value.trim();
   const subject=vEl('ledger-email-subject').value.trim();
   const body=vEl('ledger-email-body').value.trim();
+  const type=vEl('ledger-email-type')?.value||'';
+  const ref=vEl('ledger-email-ref')?.value||'';
+  let attachments=[];
+  try{
+    if(type&&ref){
+      await ensureJsPdfLoaded();
+      attachments=[await buildLedgerPdfAttachment(type,ref)];
+    }
+  }catch(err){
+    console.error('Ledger PDF build error:',err);
+    toast('Could not attach ledger PDF: '+(err.message||err),'error',6000);
+    return;
+  }
   if(!to){toast('⚠ Recipient email is required');return;}
   if(!subject){toast('⚠ Subject is required');return;}
   toast('📧 Sending…',3000);
-  sendAppEmail({to,cc,subject,message:body})
+  sendAppEmail({to,cc,subject,message:body,attachments,generatedPdf:(()=>{const p=proj();return p&&type&&ref?{filename:getLedgerPdfFilename(type,ref,p),text:sanitizeLedgerPdfText(_buildLedgerText(type,ref,p))}:null;})()})
     .then(()=>{toast('✅ Ledger emailed to '+to);closeLedgerEmail();})
     .catch(e=>{console.error('Ledger email send error:',e);toast('⚠ Email send failed: '+e.message,'error',6000);});
 }
@@ -5036,17 +5282,14 @@ openLedgerEmail = function(type, ref){
     vEl('ledger-email-title').textContent='📧 Email Trade Ledger — '+ref;
   }
 
-  let body=_buildLedgerText(type,ref,p);
-  body=body.replace(/Address\s*:\s*[^\n]*/i,`Project Address : ${getProjectAddressLine(p)}\nLivio Address   : ${LIVIO_OFFICE_ADDRESS}`);
-  const greeting='Dear '+toName+',\n\nPlease find below the current payment ledger for your reference.\n\n';
-  const closing='\n\nReply Email: '+LIVIO_REPLY_EMAIL+'\n\nPlease review and contact us if you have any questions.\n\nBest regards,\n'+getLivioEmailSignature();
+  const body=buildLedgerEmailBody(type,ref,p,toName);
 
   vEl('ledger-email-type').value=type;
   vEl('ledger-email-ref').value=ref;
   vEl('ledger-email-to').value=toEmail;
   vEl('ledger-email-cc').value='';
   vEl('ledger-email-subject').value=subject;
-  vEl('ledger-email-body').value=greeting+body+closing;
+  vEl('ledger-email-body').value=body;
 
   const st=vEl('ledger-email-status');
   if(st) st.innerHTML=getEmailStatusMarkup(getEmailConfig());
@@ -6560,6 +6803,17 @@ function blobToBase64Content(blob){
   });
 }
 
+function arrayBufferToBase64Content(buffer){
+  const bytes=new Uint8Array(buffer);
+  const chunkSize=32768;
+  let binary='';
+  for(let i=0;i<bytes.length;i+=chunkSize){
+    const chunk=bytes.subarray(i,i+chunkSize);
+    binary+=String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
+
 async function buildEmailAttachmentFromStoredFile(file){
   const blob=await fetchFileBlob(file);
   const content=await blobToBase64Content(blob);
@@ -7188,13 +7442,77 @@ const ALL_PAGES=[
   {id:'vendor-directory',label:'Vendor Directory'}
 ];
 
-function getPerms(){
-  try{
-    const s=localStorage.getItem(PERMS_KEY);
-    return s?JSON.parse(s):{};
-  }catch(e){return {};}
+function cloneDefaultUsers(){
+  return JSON.parse(JSON.stringify(DEFAULT_USERS));
 }
-function savePerms(perms){localStorage.setItem(PERMS_KEY,JSON.stringify(perms));}
+function cloneDefaultRoles(){
+  return [...DEFAULT_ROLES];
+}
+function readLegacyStore(key, fallback){
+  try{
+    if(typeof localStorage==='undefined') return fallback;
+    const raw=localStorage.getItem(key);
+    return raw?JSON.parse(raw):fallback;
+  }catch(e){
+    return fallback;
+  }
+}
+function normalizeRoleList(input){
+  const roles=(Array.isArray(input)?input:[]).map(role=>String(role||'').trim()).filter(Boolean);
+  return roles.length ? roles : cloneDefaultRoles();
+}
+function normalizeUserList(input){
+  const users=(Array.isArray(input)?input:[]).map((user,i)=>normalizeSharedUser(user,i)).filter(user=>user.username);
+  return users.length ? users : cloneDefaultUsers();
+}
+function normalizePermMap(input){
+  return (input&&typeof input==='object'&&!Array.isArray(input)) ? input : {};
+}
+function normalizePasswordResetMap(input){
+  return (input&&typeof input==='object'&&!Array.isArray(input)) ? input : {};
+}
+function ensureSharedAdminState(){
+  if(!DB||typeof DB!=='object') return;
+  let changed=false;
+
+  if(!Array.isArray(DB.users)||!DB.users.length){
+    DB.users=normalizeUserList(readLegacyStore(USERS_KEY, []));
+    changed=true;
+  }else{
+    DB.users=normalizeUserList(DB.users);
+  }
+
+  if(!Array.isArray(DB.roles)||!DB.roles.length){
+    DB.roles=normalizeRoleList(readLegacyStore(ROLES_KEY, []));
+    changed=true;
+  }else{
+    DB.roles=normalizeRoleList(DB.roles);
+  }
+
+  if(!DB.perms||typeof DB.perms!=='object'||Array.isArray(DB.perms)){
+    DB.perms=normalizePermMap(readLegacyStore(PERMS_KEY, {}));
+    changed=true;
+  }
+
+  if(!DB.passwordResets||typeof DB.passwordResets!=='object'||Array.isArray(DB.passwordResets)){
+    DB.passwordResets=normalizePasswordResetMap(readLegacyStore(RESET_KEY, {}));
+    changed=true;
+  }
+
+  if(changed){
+    try{ saveDB(); }catch(e){ console.warn('Shared admin state migration failed:',e?.message||e); }
+  }
+}
+
+function getPerms(){
+  ensureSharedAdminState();
+  return normalizePermMap(DB?.perms);
+}
+function savePerms(perms){
+  ensureSharedAdminState();
+  DB.perms=normalizePermMap(perms);
+  saveDB();
+}
 
 // Get pages accessible by a user (Admin gets all)
 function getUserPages(user){
@@ -7328,15 +7646,14 @@ function saveAccessControl(uid){
 }
 
 function getRoles(){
-  try{
-    const s=localStorage.getItem(ROLES_KEY);
-    const list=s?JSON.parse(s):null;
-    if(list&&list.length) return list;
-    localStorage.setItem(ROLES_KEY,JSON.stringify(DEFAULT_ROLES));
-    return [...DEFAULT_ROLES];
-  }catch(e){return [...DEFAULT_ROLES];}
+  ensureSharedAdminState();
+  return normalizeRoleList(DB?.roles);
 }
-function saveRoles(roles){localStorage.setItem(ROLES_KEY,JSON.stringify(roles));}
+function saveRoles(roles){
+  ensureSharedAdminState();
+  DB.roles=normalizeRoleList(roles);
+  saveDB();
+}
 function refreshRolesList(){
   const sel=document.getElementById('nu-role');
   if(!sel)return;
@@ -7397,16 +7714,14 @@ function deleteRole(name){
 }
 
 function getUsers(){
-  try{
-    const s=localStorage.getItem(USERS_KEY);
-    const list=s?JSON.parse(s):null;
-    if(list&&list.length) return list;
-    // seed defaults
-    localStorage.setItem(USERS_KEY,JSON.stringify(DEFAULT_USERS));
-    return JSON.parse(JSON.stringify(DEFAULT_USERS));
-  }catch(e){return JSON.parse(JSON.stringify(DEFAULT_USERS));}
+  ensureSharedAdminState();
+  return normalizeUserList(DB?.users);
 }
-function saveUsers(users){ localStorage.setItem(USERS_KEY,JSON.stringify(users)); }
+function saveUsers(users){
+  ensureSharedAdminState();
+  DB.users=normalizeUserList(users);
+  saveDB();
+}
 
 /* ── Mobile menu ── */
 function toggleMobMenu(){
@@ -7654,6 +7969,16 @@ function saveEditUser(uid){
 
 // ── Forgot / Reset Password ───────────────────────────────────────
 const RESET_KEY='livio_reset_v1';
+function getPasswordResets(){
+  ensureSharedAdminState();
+  return normalizePasswordResetMap(DB?.passwordResets);
+}
+function savePasswordResets(resets){
+  ensureSharedAdminState();
+  DB.passwordResets=normalizePasswordResetMap(resets);
+  saveDB();
+}
+ensureSharedAdminState();
 
 function showForgotPass(){
   const el=document.getElementById('forgot-pass-screen');if(el)el.style.display='flex';
@@ -7680,9 +8005,9 @@ function doForgotPass(){
   // Generate 6-digit reset code
   const code=String(Math.floor(100000+Math.random()*900000));
   const expiry=Date.now()+30*60*1000; // 30 min
-  const resets=JSON.parse(localStorage.getItem(RESET_KEY)||'{}');
+  const resets=getPasswordResets();
   resets[username]={code,expiry};
-  localStorage.setItem(RESET_KEY,JSON.stringify(resets));
+  savePasswordResets(resets);
 
   // Open mailto
   const subject=encodeURIComponent('Livio Building Systems — Password Reset');
@@ -7716,7 +8041,7 @@ function doResetPass(){
   const conf=(document.getElementById('reset-conf')?.value||'').trim();
   const errEl=document.getElementById('reset-error');
   if(!username||!code||!nw||!conf){if(errEl){errEl.style.display='';errEl.textContent='All fields are required.';}return;}
-  const resets=JSON.parse(localStorage.getItem(RESET_KEY)||'{}');
+  const resets=getPasswordResets();
   const r=resets[username];
   if(!r||r.code!==code){if(errEl){errEl.style.display='';errEl.textContent='Invalid reset code.';}return;}
   if(Date.now()>r.expiry){if(errEl){errEl.style.display='';errEl.textContent='Reset code has expired. Please request a new one.';}return;}
@@ -7728,7 +8053,7 @@ function doResetPass(){
   u.password=nw;
   saveUsers(users);
   delete resets[username];
-  localStorage.setItem(RESET_KEY,JSON.stringify(resets));
+  savePasswordResets(resets);
   closeResetPass();
   const ls=document.getElementById('login-screen');if(ls)ls.style.display='flex';
   setTimeout(()=>{

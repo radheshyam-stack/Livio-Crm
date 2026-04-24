@@ -113,6 +113,100 @@ function normalizeAttachments(value) {
     .filter(Boolean);
 }
 
+function escapePdfText(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+}
+
+function wrapPdfLine(line, maxLen = 95) {
+  const text = String(line || '');
+  if (!text) return [''];
+  if (text.length <= maxLen) return [text];
+
+  const parts = [];
+  let remaining = text;
+  while (remaining.length > maxLen) {
+    let splitAt = remaining.lastIndexOf(' ', maxLen);
+    if (splitAt < 20) splitAt = maxLen;
+    parts.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt).trimStart();
+  }
+  parts.push(remaining);
+  return parts;
+}
+
+function buildSimpleTextPdfBuffer(text) {
+  const lines = String(text || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .flatMap((line) => wrapPdfLine(line));
+
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const left = 40;
+  const top = 752;
+  const lineHeight = 12;
+  const bottom = 40;
+  const usableLines = Math.max(1, Math.floor((top - bottom) / lineHeight));
+  const pages = [];
+
+  for (let i = 0; i < lines.length; i += usableLines) {
+    pages.push(lines.slice(i, i + usableLines));
+  }
+  if (!pages.length) pages.push(['']);
+
+  const objects = [];
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+  objects.push(`<< /Type /Pages /Kids [${pages.map((_, idx) => `${3 + idx * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`);
+
+  pages.forEach((pageLines, idx) => {
+    const pageObjectId = 3 + idx * 2;
+    const contentObjectId = pageObjectId + 1;
+    const streamLines = ['BT', '/F1 10 Tf', `${left} ${top} Td`, `${lineHeight} TL`];
+    pageLines.forEach((line, lineIndex) => {
+      streamLines.push(`(${escapePdfText(line)}) Tj`);
+      if (lineIndex < pageLines.length - 1) streamLines.push('T*');
+    });
+    streamLines.push('ET');
+    const stream = streamLines.join('\n');
+
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${3 + pages.length * 2} 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
+    objects.push(`<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`);
+  });
+
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>');
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((objectBody, idx) => {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += `${idx + 1} 0 obj\n${objectBody}\nendobj\n`;
+  });
+
+  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let i = 1; i < offsets.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(pdf, 'utf8');
+}
+
+function normalizeGeneratedPdf(value) {
+  if (!value || typeof value !== 'object') return null;
+  const filename = String(value.filename || 'ledger.pdf').trim() || 'ledger.pdf';
+  const text = String(value.text || '').trim();
+  if (!text) return null;
+  return {
+    filename: filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`,
+    contentType: 'application/pdf',
+    content: buildSimpleTextPdfBuffer(text).toString('base64')
+  };
+}
+
 function friendlyEmailError(err) {
   const msg = String(err?.message || '').trim();
   const code = String(err?.code || '').trim();
@@ -166,13 +260,15 @@ async function resendRequest(path, options = {}) {
   return data;
 }
 
-async function sendViaResend({ to, cc, subject, message, fromName, replyTo, attachments }) {
+async function sendViaResend({ to, cc, subject, message, fromName, replyTo, attachments, generatedPdf }) {
   const recipients = parseEmailList(to);
   if (!recipients.length) throw new Error('Recipient email (to) is required');
 
   const ccList = parseEmailList(cc);
   const { from } = getFromIdentity(fromName);
   const attachmentList = normalizeAttachments(attachments);
+  const generatedPdfAttachment = normalizeGeneratedPdf(generatedPdf);
+  if (generatedPdfAttachment) attachmentList.push(generatedPdfAttachment);
 
   const payload = {
     from,
@@ -206,7 +302,7 @@ async function sendViaResend({ to, cc, subject, message, fromName, replyTo, atta
   };
 }
 
-async function sendViaSmtp({ to, cc, subject, message, fromName, replyTo, smtpOverride, attachments }) {
+async function sendViaSmtp({ to, cc, subject, message, fromName, replyTo, smtpOverride, attachments, generatedPdf }) {
   const smtp = normalizeSmtpConfig(smtpOverride || {});
   const smtpUser = smtp.user;
   if (!smtpUser) {
@@ -216,6 +312,8 @@ async function sendViaSmtp({ to, cc, subject, message, fromName, replyTo, smtpOv
   const transporter = buildTransporter(smtp);
   const { from } = getFromIdentity(fromName);
   const attachmentList = normalizeAttachments(attachments);
+  const generatedPdfAttachment = normalizeGeneratedPdf(generatedPdf);
+  if (generatedPdfAttachment) attachmentList.push(generatedPdfAttachment);
 
   const normalizedReplyTo = getReplyToAddress(replyTo);
   const mailOptions = {
@@ -247,7 +345,7 @@ async function sendViaSmtp({ to, cc, subject, message, fromName, replyTo, smtpOv
 
 async function sendEmail(req, res) {
   try {
-    const { to, cc, subject, message, fromName, replyTo, smtpOverride, attachments } = req.body || {};
+    const { to, cc, subject, message, fromName, replyTo, smtpOverride, attachments, generatedPdf } = req.body || {};
 
     if (!to) return res.status(400).json({ error: 'Recipient email (to) is required' });
     if (!subject) return res.status(400).json({ error: 'Subject is required' });
@@ -261,8 +359,8 @@ async function sendEmail(req, res) {
     }
 
     const result = provider === 'resend'
-      ? await sendViaResend({ to, cc, subject, message, fromName, replyTo, attachments })
-      : await sendViaSmtp({ to, cc, subject, message, fromName, replyTo, smtpOverride, attachments });
+      ? await sendViaResend({ to, cc, subject, message, fromName, replyTo, attachments, generatedPdf })
+      : await sendViaSmtp({ to, cc, subject, message, fromName, replyTo, smtpOverride, attachments, generatedPdf });
 
     return res.json(result);
   } catch (err) {
