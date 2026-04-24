@@ -628,7 +628,7 @@ const CL={
   ]}
 };
 Object.keys(CL).forEach(key => delete CL[key]);
-const getChecklistGroups = () => Object.entries(CL).filter(([,section]) => Array.isArray(section?.items) && section.items.length);
+const getChecklistGroups = () => Object.entries(checklistTemplate||{}).filter(([,section]) => Array.isArray(section?.items) && section.items.length);
 
 // ── DISCUSSION SEED DATA ──
 const DISC_SEED = [
@@ -675,6 +675,7 @@ const createEmptyTrackerState = () => ({
   days: [],
   discItems: cloneData(DISC_SEED, []),
   clients: [],
+  checklistTemplate: {},
   curDay: null,
   curDiscId: null,
   curClient: null,
@@ -710,6 +711,7 @@ function readFallbackState(){
     days: Array.isArray(daysState) ? daysState : [],
     discItems: Array.isArray(discState) ? discState : cloneData(DISC_SEED, []),
     clients: Array.isArray(clientsState) ? clientsState : [],
+    checklistTemplate: (meta.checklistTemplate && typeof meta.checklistTemplate === 'object' && !Array.isArray(meta.checklistTemplate)) ? cloneData(meta.checklistTemplate, {}) : {},
     curDay: meta.curDay ?? null,
     curDiscId: meta.curDiscId ?? null,
     curClient: meta.curClient ?? null,
@@ -739,6 +741,7 @@ function buildTrackerState(){
     days: cloneData(days, []),
     discItems: cloneData(discItems, []),
     clients: cloneData(clients, []),
+    checklistTemplate: cloneData(checklistTemplate, {}),
     curDay,
     curDiscId,
     curClient,
@@ -749,6 +752,7 @@ function applyTrackerState(raw){
   days = Array.isArray(state.days) ? cloneData(state.days, []) : [];
   discItems = Array.isArray(state.discItems) ? cloneData(state.discItems, []) : cloneData(DISC_SEED, []);
   clients = Array.isArray(state.clients) ? cloneData(state.clients, []) : [];
+  checklistTemplate = (state.checklistTemplate && typeof state.checklistTemplate === 'object' && !Array.isArray(state.checklistTemplate)) ? cloneData(state.checklistTemplate, {}) : {};
   curDay = state.curDay && days.some(d=>d.id===state.curDay) ? state.curDay : (days.length ? days[days.length-1].id : null);
   curDiscId = state.curDiscId && discItems.some(d=>d.id===state.curDiscId) ? state.curDiscId : null;
   curClient = state.curClient && clients.some(c=>c.id===state.curClient) ? state.curClient : null;
@@ -758,6 +762,7 @@ function writeFallbackState(state){
   localStorage.setItem('dt_disc', JSON.stringify(state.discItems));
   localStorage.setItem('dt_clients', JSON.stringify(state.clients));
   localStorage.setItem(DT_STATE_KEY, JSON.stringify({
+    checklistTemplate: (state.checklistTemplate && typeof state.checklistTemplate === 'object' && !Array.isArray(state.checklistTemplate)) ? state.checklistTemplate : {},
     curDay: state.curDay ?? null,
     curDiscId: state.curDiscId ?? null,
     curClient: state.curClient ?? null,
@@ -803,6 +808,7 @@ let discFilter = 'all';
 let expandedDisc = {};
 let clients = [];
 let curClient = null;
+let checklistTemplate = {};
 let syncedProjectId = null;
 
 applyTrackerState(readTrackerState());
@@ -892,10 +898,11 @@ function renderMain(){
     return;
   }
   const day=getDay(curDay); if(!day)return;
+  const hasChecklist = getChecklistGroups().length > 0;
   const s=sc(day),pct=s.ti?Math.round((s.c/s.ti)*100):0;
   const d=new Date(day.date+'T12:00:00');
   const ds=d.toLocaleDateString('en-IN',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  const nas=Object.values(day.checks||{}).filter(v=>v==='na').length;
+  const nas=hasChecklist?Object.values(day.checks||{}).filter(v=>v==='na').length:0;
   main.innerHTML=`
   <div class="day-header">
     <div>
@@ -924,6 +931,7 @@ function renderMain(){
     <button class="tab-btn active" onclick="switchTab(event,'tCL')">Checklist</button>
     <button class="tab-btn" onclick="switchTab(event,'tMD')">Media</button>
     <button class="tab-btn" onclick="switchTab(event,'tHI')">History</button>
+    <button class="tab-btn" style="color:var(--amber)" onclick="deleteChecklist()">Delete Checklist</button>
     <button class="tab-btn" style="margin-left:auto;color:var(--red);border-color:rgba(248,81,73,0.25)" onclick="deleteDay('${curDay}')">🗑 Delete Day</button>
   </div>
   <div class="tab-content active" id="tCL">${buildCL(day)}</div>
@@ -1055,8 +1063,8 @@ function buildCL(day){
   if(!groups.length){
     return `<div class="cl-section">
       <div style="padding:28px 24px;text-align:center">
-        <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">No prefilled checklist</div>
-        <div style="font-size:13px;color:var(--text2);line-height:1.7;max-width:520px;margin:0 auto">The default Daily Tracker checklist has been removed. Each project now starts with a blank checklist area.</div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px">No checklist for this project</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.7;max-width:520px;margin:0 auto">This Daily Tracker checklist is now project-specific, and the old prewritten checklist has been removed from Days.</div>
       </div>
     </div>`;
   }
@@ -1230,6 +1238,18 @@ function closeCamera(){
   document.getElementById('camModal').classList.remove('open');
   if(camCount>0) renderMain();
   camCount=0;
+}
+
+function deleteChecklist(){
+  if(!confirm('Delete the checklist for this project? This will clear all checklist entries saved in Daily Tracker for this project.'))return;
+  checklistTemplate={};
+  days.forEach(day=>{
+    day.checks={};
+    day.comments={};
+  });
+  save();
+  renderSidebar();
+  renderMain();
 }
 
 function deleteDay(id){
