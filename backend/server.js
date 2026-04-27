@@ -5,7 +5,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { getFileStorageDriver } = require('./lib/fileStorage');
-const { hasSupabaseConfig } = require('./lib/supabase');
+const { hasDatabaseConfig } = require('./lib/db');
 const { getDbPath, getPersistentRoot, getUploadDir } = require('./lib/storagePaths');
 
 const app = express();
@@ -14,13 +14,19 @@ const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = getUploadDir();
 const DB_PATH = getDbPath();
 const PERSISTENT_ROOT = getPersistentRoot();
-const DB_STORAGE_DRIVER = hasSupabaseConfig() ? 'supabase' : 'local';
 const FILE_STORAGE_DRIVER = getFileStorageDriver();
 const IS_RAILWAY = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_PROJECT_ID);
+const DB_STORAGE_DRIVER = hasDatabaseConfig() ? 'postgres' : 'local-json';
 const FRONTEND_DIST = path.resolve(__dirname, '../frontend-react/dist');
 
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Make sure the upload dir exists at boot.  Wrapped so that a full or
+// unmounted Railway volume can't take down the server process.
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error(`Could not ensure upload dir ${UPLOAD_DIR}:`, err.message);
 }
 
 const allowedOrigins = (process.env.FRONTEND_ORIGIN || '')
@@ -66,6 +72,8 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// /uploads/:projectId/:filename — frontend builds URLs against this path.
+// Files live on the Railway volume mounted at UPLOAD_DIR.
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 app.use('/api/projects', require('./routes/projects'));
@@ -77,7 +85,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     server: 'Livio Building Systems API',
     version: '1.0.0',
-    storage: FILE_STORAGE_DRIVER,
+    storage: `${DB_STORAGE_DRIVER}+${FILE_STORAGE_DRIVER}`,
     dbStorage: DB_STORAGE_DRIVER,
     fileStorage: FILE_STORAGE_DRIVER,
     persistentRoot: PERSISTENT_ROOT || null,
@@ -113,9 +121,13 @@ app.listen(PORT, HOST, () => {
   console.log(`  Health  : http://${HOST}:${PORT}/api/health`);
   console.log(`  DB      : ${DB_STORAGE_DRIVER}`);
   console.log(`  Files   : ${FILE_STORAGE_DRIVER}`);
-  console.log(`  Data    : ${DB_PATH}`);
-  if (FILE_STORAGE_DRIVER === 'local') console.log(`  Uploads : ${UPLOAD_DIR}`);
+  console.log(`  Uploads : ${UPLOAD_DIR}`);
   if (PERSISTENT_ROOT) console.log(`  Volume  : ${PERSISTENT_ROOT}`);
+  if (!hasDatabaseConfig()) {
+    console.log(`  Data    : ${DB_PATH}  (local JSON fallback)`);
+  } else {
+    console.log(`  Data    : Postgres (DATABASE_URL)`);
+  }
   if (IS_RAILWAY && FILE_STORAGE_DRIVER === 'local' && !PERSISTENT_ROOT) {
     console.warn('  Warning : Railway local container storage is active. Attach a Volume, configure Cloudflare R2, or configure Supabase to avoid ENOSPC.');
   }

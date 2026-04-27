@@ -12,12 +12,20 @@ const {
   getSupabaseConfig
 } = require('../lib/fileStorage');
 const { getUploadDir } = require('../lib/storagePaths');
-
-const UPLOAD_DIR = getUploadDir();
-const FILE_STORAGE_DRIVER = getFileStorageDriver();
 const MAX_UPLOAD_MB = Math.max(1, Number(process.env.MAX_UPLOAD_MB || 500));
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Create the upload dir at boot if it does not already exist.  Wrapped in
+// try/catch so a full or unmounted Railway volume can't take down the server.
+const UPLOAD_DIR = getUploadDir();
+const FILE_STORAGE_DRIVER = getFileStorageDriver();
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error(`Could not ensure upload dir ${UPLOAD_DIR}:`, err.message);
+}
 
 function allowFile(req, file, cb) {
   const allowed = /\.(pdf|doc|docx|xls|xlsx|png|jpg|jpeg|gif|webp|svg|txt|csv|zip|dwg|dxf)$/i;
@@ -33,8 +41,12 @@ const diskUpload = multer({
     destination: (req, file, cb) => {
       const projectId = req.body.projectId || req.query.projectId || 'general';
       const dir = path.join(UPLOAD_DIR, projectId);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
+      try {
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+      } catch (err) {
+        cb(err);
+      }
     },
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname);
@@ -136,6 +148,7 @@ router.post('/upload', (req, res, next) => {
 
     res.json({ ok: true, files: uploaded });
   } catch (err) {
+    console.error('Upload error:', err);
     res.status(500).json({ error: err.message || 'Upload failed' });
   }
 });
@@ -231,7 +244,8 @@ router.delete('/:projectId/:filename', async (req, res) => {
 
     return res.status(404).json({ error: 'File not found' });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'File delete failed' });
+    console.error('File delete error:', err);
+    return res.status(500).json({ error: err.message || 'File delete failed' });
   }
 });
 
