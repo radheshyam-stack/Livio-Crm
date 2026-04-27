@@ -10,12 +10,34 @@ function getPersistentRoot() {
   return null;
 }
 
+function normalizeRelativeStorageValue(value) {
+  return value
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/^\/+/, '')
+    .replace(/\/+/g, '/');
+}
+
+function isDefaultRelativeStoragePath(explicitValue, fallbackSegments) {
+  if (!explicitValue || !explicitValue.trim()) return false;
+
+  return normalizeRelativeStorageValue(explicitValue) === fallbackSegments.join('/');
+}
+
 function resolveStoragePath(explicitValue, fallbackSegments) {
+  const persistentRoot = getPersistentRoot();
+
   if (explicitValue && explicitValue.trim()) {
-    return path.resolve(explicitValue.trim());
+    const explicitPath = explicitValue.trim();
+
+    // Keep local-dev defaults convenient, but let an attached Railway volume win
+    // over those starter relative paths.
+    if (!persistentRoot || !isDefaultRelativeStoragePath(explicitPath, fallbackSegments)) {
+      return path.resolve(explicitPath);
+    }
   }
 
-  const persistentRoot = getPersistentRoot();
   if (persistentRoot) {
     return path.resolve(persistentRoot, ...fallbackSegments);
   }

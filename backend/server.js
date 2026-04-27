@@ -4,6 +4,8 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { getFileStorageDriver } = require('./lib/fileStorage');
+const { hasSupabaseConfig } = require('./lib/supabase');
 const { getDbPath, getPersistentRoot, getUploadDir } = require('./lib/storagePaths');
 
 const app = express();
@@ -12,7 +14,9 @@ const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = getUploadDir();
 const DB_PATH = getDbPath();
 const PERSISTENT_ROOT = getPersistentRoot();
-const STORAGE_DRIVER = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY ? 'supabase' : 'local';
+const DB_STORAGE_DRIVER = hasSupabaseConfig() ? 'supabase' : 'local';
+const FILE_STORAGE_DRIVER = getFileStorageDriver();
+const IS_RAILWAY = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_ENVIRONMENT_NAME || process.env.RAILWAY_PROJECT_ID);
 const FRONTEND_DIST = path.resolve(__dirname, '../frontend-react/dist');
 
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -73,7 +77,12 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     server: 'Livio Building Systems API',
     version: '1.0.0',
-    storage: STORAGE_DRIVER,
+    storage: FILE_STORAGE_DRIVER,
+    dbStorage: DB_STORAGE_DRIVER,
+    fileStorage: FILE_STORAGE_DRIVER,
+    persistentRoot: PERSISTENT_ROOT || null,
+    uploadsPath: FILE_STORAGE_DRIVER === 'local' ? UPLOAD_DIR : null,
+    dataPath: DB_PATH,
     time: new Date().toISOString()
   });
 });
@@ -102,9 +111,13 @@ app.listen(PORT, HOST, () => {
   console.log('\nLivio Building Systems API Server');
   console.log(`  URL     : http://${HOST}:${PORT}`);
   console.log(`  Health  : http://${HOST}:${PORT}/api/health`);
-  console.log(`  Storage : ${STORAGE_DRIVER}`);
+  console.log(`  DB      : ${DB_STORAGE_DRIVER}`);
+  console.log(`  Files   : ${FILE_STORAGE_DRIVER}`);
   console.log(`  Data    : ${DB_PATH}`);
-  console.log(`  Uploads : ${UPLOAD_DIR}`);
+  if (FILE_STORAGE_DRIVER === 'local') console.log(`  Uploads : ${UPLOAD_DIR}`);
   if (PERSISTENT_ROOT) console.log(`  Volume  : ${PERSISTENT_ROOT}`);
+  if (IS_RAILWAY && FILE_STORAGE_DRIVER === 'local' && !PERSISTENT_ROOT) {
+    console.warn('  Warning : Railway local container storage is active. Attach a Volume, configure Cloudflare R2, or configure Supabase to avoid ENOSPC.');
+  }
   console.log('');
 });

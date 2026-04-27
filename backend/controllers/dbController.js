@@ -4,7 +4,16 @@ const { getSupabaseAdmin, getSupabaseConfig, hasSupabaseConfig } = require('../l
 const { getDbPath } = require('../lib/storagePaths');
 
 const DB_PATH = getDbPath();
-const EMPTY_DB = { projects: [], activeId: null, activeProjectId: null };
+const EMPTY_DB = {
+  projects: [],
+  activeId: null,
+  activeProjectId: null,
+  vendorDirectory: [],
+  users: [],
+  roles: [],
+  perms: {},
+  passwordResets: {}
+};
 
 function cloneEmptyDB() {
   return JSON.parse(JSON.stringify(EMPTY_DB));
@@ -18,6 +27,13 @@ function normalizeDB(data) {
     ...cloneEmptyDB(),
     ...raw,
     projects: Array.isArray(raw.projects) ? raw.projects : [],
+    vendorDirectory: Array.isArray(raw.vendorDirectory) ? raw.vendorDirectory : [],
+    users: Array.isArray(raw.users) ? raw.users : [],
+    roles: Array.isArray(raw.roles) ? raw.roles : [],
+    perms: raw.perms && typeof raw.perms === 'object' && !Array.isArray(raw.perms) ? raw.perms : {},
+    passwordResets: raw.passwordResets && typeof raw.passwordResets === 'object' && !Array.isArray(raw.passwordResets)
+      ? raw.passwordResets
+      : {},
     activeId,
     activeProjectId: activeId
   };

@@ -47,6 +47,12 @@ Deploy the frontend and backend as two separate Railway services from this monor
   - Attach a Railway Volume and mount it, then set either:
   - `PERSISTENT_ROOT=<your-volume-mount-path>`
   - or `DB_FILE=<your-volume-mount-path>/db.json` and `UPLOAD_DIR=<your-volume-mount-path>/uploads`
+  - Optional file storage override: `FILE_STORAGE_DRIVER=r2`
+  - Cloudflare R2 file storage:
+    - `CF_R2_ACCOUNT_ID=...`
+    - `CF_R2_ACCESS_KEY_ID=...`
+    - `CF_R2_SECRET_ACCESS_KEY=...`
+    - `CF_R2_BUCKET=...`
   - `SUPABASE_URL=...`
   - `SUPABASE_SERVICE_ROLE_KEY=...`
   - `SUPABASE_DB_TABLE=app_state`
@@ -66,5 +72,7 @@ Deploy the frontend and backend as two separate Railway services from this monor
 - `FRONTEND_ORIGIN` must exactly match your deployed frontend origin, for example `https://your-frontend-domain`.
 - Render: [render.yaml](/C:/Users/hp/OneDrive/Desktop/livio%20app/render.yaml) now mounts a persistent disk at `/var/data/livio` and stores both `db.json` and uploads there.
 - Railway: attach a Volume to the backend service and set `PERSISTENT_ROOT` to the mount path, or set `DB_FILE` and `UPLOAD_DIR` directly to that mounted path.
+- Cloudflare R2 is supported for file uploads. Set `FILE_STORAGE_DRIVER=r2` plus the `CF_R2_*` variables on the backend service if you want uploads off Railway disk.
+- The backend now treats starter defaults like `./data/db.json` and `./uploads` as local-dev values, so an attached Railway volume can take over automatically via `PERSISTENT_ROOT` or `RAILWAY_VOLUME_MOUNT_PATH`.
 - Without a mounted disk/volume or Supabase, filesystem writes can be lost after restarts/redeploys.
 - Supabase is already supported by the backend and is the safer option for shared production data if you do not want to rely on a mounted disk/volume.
