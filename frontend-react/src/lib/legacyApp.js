@@ -2299,8 +2299,8 @@ function saveModal(){
     const color=document.querySelector('.cswatch.sel')?.dataset.color||COLORS[0];
     const street=vVal('f-street'),city=vVal('f-city'),state=vVal('f-state'),zip=vVal('f-zip'),county=vVal('f-county');
     const address=[street,city,state,zip].filter(Boolean).join(', ');
-    const o={id:mId||('proj_'+uid()),name,street,city,county,state,zip,address,permit:vVal('f-permit'),apn:vVal('f-apn'),type:vVal('f-type'),color,client:vVal('f-client'),clientPhone:vVal('f-clientPhone'),clientEmail:vVal('f-clientEmail'),clientAddr:vVal('f-clientAddr'),works:[],milestones:[],quotes:[],plans:[],inspections:[],invoices:[],vendors:[],checklist:[],qaqcLog:[]};
-    if(mId){const idx=DB.projects.findIndex(x=>x.id===mId);if(idx>-1){['works','milestones','quotes','plans','inspections','invoices','vendors','checklist','qaqcLog'].forEach(k=>{if(DB.projects[idx][k]!==undefined)o[k]=DB.projects[idx][k];});DB.projects[idx]=o;}}
+    const o={id:mId||('proj_'+uid()),name,street,city,county,state,zip,address,permit:vVal('f-permit'),apn:vVal('f-apn'),type:vVal('f-type'),color,client:vVal('f-client'),clientPhone:vVal('f-clientPhone'),clientEmail:vVal('f-clientEmail'),clientAddr:vVal('f-clientAddr'),works:[],milestones:[],quotes:[],plans:[],inspections:[],invoices:[],vendors:[],checklist:[],qaqcLog:[],dailyTracker:{days:[],discItems:[],clients:[],checklistTemplate:{},curDay:null,curDiscId:null,curClient:null}};
+    if(mId){const idx=DB.projects.findIndex(x=>x.id===mId);if(idx>-1){['works','milestones','quotes','plans','inspections','invoices','vendors','checklist','qaqcLog','dailyTracker'].forEach(k=>{if(DB.projects[idx][k]!==undefined)o[k]=DB.projects[idx][k];});DB.projects[idx]=o;}}
     else{DB.projects.push(o);DB.activeId=o.id;}
 
   } else if(mMode==='work'&&p){
@@ -2529,7 +2529,7 @@ function saveModal(){
     if(pm) pm.lienFiles=[...mPending];
   }
 
-  saveDB(); closeModal(); renderAll(); toast('✓ Saved');
+  saveDB(); syncEmbeddedProjectFrames(true); closeModal(); renderAll(); toast('✓ Saved');
 }
 
 // ══════════════════════════════════════════════════════════════════
