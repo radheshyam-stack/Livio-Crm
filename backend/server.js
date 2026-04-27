@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { hasDatabaseConfig } = require('./lib/db');
 const { getDbPath, getPersistentRoot, getUploadDir } = require('./lib/storagePaths');
 
 const app = express();
@@ -12,11 +13,17 @@ const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = getUploadDir();
 const DB_PATH = getDbPath();
 const PERSISTENT_ROOT = getPersistentRoot();
-const STORAGE_DRIVER = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY ? 'supabase' : 'local';
+const STORAGE_DRIVER = hasDatabaseConfig() ? 'postgres+volume' : 'local-json+volume';
 const FRONTEND_DIST = path.resolve(__dirname, '../frontend-react/dist');
 
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Make sure the upload dir exists at boot.  Wrapped so that a full or
+// unmounted Railway volume can't take down the server process.
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error(`Could not ensure upload dir ${UPLOAD_DIR}:`, err.message);
 }
 
 const allowedOrigins = (process.env.FRONTEND_ORIGIN || '')
@@ -62,6 +69,8 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// /uploads/:projectId/:filename — frontend builds URLs against this path.
+// Files live on the Railway volume mounted at UPLOAD_DIR.
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 app.use('/api/projects', require('./routes/projects'));
@@ -103,8 +112,12 @@ app.listen(PORT, HOST, () => {
   console.log(`  URL     : http://${HOST}:${PORT}`);
   console.log(`  Health  : http://${HOST}:${PORT}/api/health`);
   console.log(`  Storage : ${STORAGE_DRIVER}`);
-  console.log(`  Data    : ${DB_PATH}`);
   console.log(`  Uploads : ${UPLOAD_DIR}`);
   if (PERSISTENT_ROOT) console.log(`  Volume  : ${PERSISTENT_ROOT}`);
+  if (!hasDatabaseConfig()) {
+    console.log(`  Data    : ${DB_PATH}  (local JSON fallback)`);
+  } else {
+    console.log(`  Data    : Postgres (DATABASE_URL)`);
+  }
   console.log('');
 });

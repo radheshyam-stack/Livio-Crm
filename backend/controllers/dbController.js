@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const { getSupabaseAdmin, getSupabaseConfig, hasSupabaseConfig } = require('../lib/supabase');
+const {
+  hasDatabaseConfig,
+  readAppStateRow,
+  writeAppStateRow
+} = require('../lib/db');
 const { getDbPath } = require('../lib/storagePaths');
 
 const DB_PATH = getDbPath();
@@ -23,6 +27,7 @@ function normalizeDB(data) {
   };
 }
 
+// ── Local-disk driver (dev fallback when DATABASE_URL is not set) ────────────
 function ensureLocalDB() {
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -37,7 +42,7 @@ function readLocalDB() {
     const raw = fs.readFileSync(DB_PATH, 'utf8');
     return normalizeDB(JSON.parse(raw));
   } catch (e) {
-    console.error('DB read error:', e.message);
+    console.error('Local DB read error:', e.message);
     return cloneEmptyDB();
   }
 }
@@ -47,61 +52,27 @@ function writeLocalDB(data) {
   fs.writeFileSync(DB_PATH, JSON.stringify(normalizeDB(data), null, 2));
 }
 
-async function ensureSupabaseRow() {
-  const supabase = getSupabaseAdmin();
-  const { rowId, table } = getSupabaseConfig();
-
-  const { data, error } = await supabase
-    .from(table)
-    .select('id')
-    .eq('id', rowId)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  if (!data) {
-    const { error: insertError } = await supabase
-      .from(table)
-      .insert({ id: rowId, data: cloneEmptyDB() });
-    if (insertError) throw insertError;
-  }
+// ── Postgres driver (production) ─────────────────────────────────────────────
+async function readPgDB() {
+  const raw = await readAppStateRow('main');
+  // First-boot case: ensureSchema() seeded an empty row, but in case the row
+  // is absent for any reason, fall back to an empty DB.
+  return normalizeDB(raw || cloneEmptyDB());
 }
 
-async function readSupabaseDB() {
-  const supabase = getSupabaseAdmin();
-  const { rowId, table } = getSupabaseConfig();
-
-  await ensureSupabaseRow();
-
-  const { data, error } = await supabase
-    .from(table)
-    .select('data')
-    .eq('id', rowId)
-    .single();
-
-  if (error) throw error;
-  return normalizeDB(data?.data);
-}
-
-async function writeSupabaseDB(data) {
-  const supabase = getSupabaseAdmin();
-  const { rowId, table } = getSupabaseConfig();
+async function writePgDB(data) {
   const normalized = normalizeDB(data);
-
-  const { error } = await supabase
-    .from(table)
-    .upsert({ id: rowId, data: normalized }, { onConflict: 'id' });
-
-  if (error) throw error;
+  await writeAppStateRow(normalized, 'main');
   return normalized;
 }
 
+// ── Unified read/write ───────────────────────────────────────────────────────
 async function readDB() {
-  if (hasSupabaseConfig()) {
+  if (hasDatabaseConfig()) {
     try {
-      return await readSupabaseDB();
+      return await readPgDB();
     } catch (e) {
-      console.error('Supabase DB read error:', e.message);
+      console.error('Postgres DB read error:', e.message);
       console.error('Falling back to local JSON data.');
     }
   }
@@ -110,11 +81,11 @@ async function readDB() {
 }
 
 async function writeDB(data) {
-  if (hasSupabaseConfig()) {
+  if (hasDatabaseConfig()) {
     try {
-      return await writeSupabaseDB(data);
+      return await writePgDB(data);
     } catch (e) {
-      console.error('Supabase DB write error:', e.message);
+      console.error('Postgres DB write error:', e.message);
       console.error('Falling back to local JSON file for this write.');
     }
   }
